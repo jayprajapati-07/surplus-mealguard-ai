@@ -1,0 +1,537 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String                         @id @default(cuid())
+  email             String                         @unique
+  passwordHash      String
+  name              String
+  role              String                         @default("STAFF")
+  organizationId    String?
+  ngoOrganizationId String?
+  emailVerified     Boolean                        @default(false)
+  verificationToken String?                        @unique
+  resetToken        String?                        @unique
+  resetExpiresAt    DateTime?
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  sessions          Session[]
+  assessments       SurplusEligibilityAssessment[] @relation("AssessedBy")
+  ngoOrganization   NgoOrganization?               @relation(fields: [ngoOrganizationId], references: [id])
+  organization      Organization?                  @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([role])
+  @@index([ngoOrganizationId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Organization {
+  id                 String                         @id @default(cuid())
+  name               String                         @unique
+  sector             String
+  institutionType    String
+  address            String
+  city               String
+  contactName        String
+  contactPhone       String
+  contactEmail       String
+  operatingHours     String
+  peopleServedDaily  Int
+  kitchenCapacityKg  Float
+  ownerId            String?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+  auditLogs          AuditLog[]
+  bufferConfig       BufferConfig?
+  dailyRecords       DailyFoodRecord[]
+  eligibilityConfig  EligibilityConfig?
+  eodReports         EndOfDayReport[]
+  flowEntries        FoodFlowEntry[]
+  foodItems          FoodItem[]
+  forecasts          ForecastSnapshot[]
+  impactSnapshots    ImpactSnapshot[]
+  importJobs         ImportJob[]
+  inventory          InventoryItem[]
+  inventoryThreshold InventoryThreshold?
+  kitchens           KitchenUnit[]
+  menus              Menu[]
+  profile            OrganizationProfile?
+  productionTargets  ProductionTarget[]
+  recipeIngredients  RecipeIngredient[]
+  recommendations    Recommendation[]
+  redistributions    RedistributionRecord[]
+  riskThreshold      RiskThreshold?
+  assessments        SurplusEligibilityAssessment[]
+  members            User[]
+
+  @@index([city])
+}
+
+model OrganizationProfile {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  notes          String?
+  dietaryFocus   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model KitchenUnit {
+  id                   String                         @id @default(cuid())
+  organizationId       String
+  name                 String
+  mealTimings          String
+  storageAreas         String
+  foodCategories       String
+  productionCapacityKg Float
+  createdAt            DateTime                       @default(now())
+  updatedAt            DateTime                       @updatedAt
+  dailyRecords         DailyFoodRecord[]
+  eodReports           EndOfDayReport[]
+  flowEntries          FoodFlowEntry[]
+  forecasts            ForecastSnapshot[]
+  inventory            InventoryItem[]
+  organization         Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  menus                Menu[]
+  productionTargets    ProductionTarget[]
+  recommendations      Recommendation[]
+  redistributions      RedistributionRecord[]
+  assessments          SurplusEligibilityAssessment[]
+
+  @@unique([organizationId, name])
+}
+
+model FoodItem {
+  id                String             @id @default(cuid())
+  organizationId    String
+  name              String
+  category          String
+  mealType          String?
+  standardPortionKg Float?
+  sellingPrice      Float?
+  recipeText        String?
+  isActive          Boolean            @default(true)
+  unit              String             @default("kg")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  records           DailyFoodRecord[]
+  flowEntries       FoodFlowEntry[]
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inventory         InventoryItem[]
+  menuItems         MenuItem[]
+  productionTargets ProductionTarget[]
+  recipeUses        RecipeIngredient[]
+
+  @@unique([organizationId, name])
+}
+
+model RecipeIngredient {
+  id             String       @id @default(cuid())
+  organizationId String
+  foodItemId     String?
+  ingredientName String
+  quantityKg     Float
+  createdAt      DateTime     @default(now())
+  foodItem       FoodItem?    @relation(fields: [foodItemId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model Menu {
+  id             String       @id @default(cuid())
+  organizationId String
+  kitchenUnitId  String?
+  date           DateTime
+  mealType       String
+  title          String?
+  scope          String       @default("DAILY")
+  isSpecial      Boolean      @default(false)
+  specialLabel   String?
+  createdAt      DateTime     @default(now())
+  kitchenUnit    KitchenUnit? @relation(fields: [kitchenUnitId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items          MenuItem[]
+
+  @@index([organizationId, date])
+}
+
+model MenuItem {
+  id         String    @id @default(cuid())
+  menuId     String
+  foodItemId String?
+  name       String
+  quantityKg Float
+  createdAt  DateTime  @default(now())
+  foodItem   FoodItem? @relation(fields: [foodItemId], references: [id])
+  menu       Menu      @relation(fields: [menuId], references: [id], onDelete: Cascade)
+}
+
+model DailyFoodRecord {
+  id               String       @id @default(cuid())
+  organizationId   String
+  kitchenUnitId    String
+  foodItemId       String?
+  date             DateTime
+  mealType         String
+  targetKg         Float?
+  preparedKg       Float
+  servedKg         Float
+  soldKg           Float?
+  wasteKg          Float
+  remainingKg      Float?
+  adjustmentReason String?
+  isCorrection     Boolean      @default(false)
+  correctionReason String?
+  notes            String?
+  createdAt        DateTime     @default(now())
+  foodItem         FoodItem?    @relation(fields: [foodItemId], references: [id])
+  kitchenUnit      KitchenUnit  @relation(fields: [kitchenUnitId], references: [id], onDelete: Cascade)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, date])
+}
+
+model FoodFlowEntry {
+  id             String       @id @default(cuid())
+  organizationId String
+  kitchenUnitId  String?
+  foodItemId     String?
+  stage          String
+  quantityKg     Float
+  notes          String?
+  recordedAt     DateTime     @default(now())
+  mealType       String?
+  entryKind      String       @default("PRODUCTION")
+  direction      String       @default("ADD")
+  refKind        String?
+  reason         String?
+  createdById    String?
+  createdByName  String?
+  foodItem       FoodItem?    @relation(fields: [foodItemId], references: [id])
+  kitchenUnit    KitchenUnit? @relation(fields: [kitchenUnitId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, stage])
+}
+
+model InventoryItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  kitchenUnitId  String?
+  foodItemId     String?
+  batchCode      String?
+  quantityKg     Float
+  expiryDate     DateTime?
+  storageArea    String?
+  supplier       String?
+  purchaseDate   DateTime?
+  status         String       @default("ACTIVE")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  foodItem       FoodItem?    @relation(fields: [foodItemId], references: [id])
+  kitchenUnit    KitchenUnit? @relation(fields: [kitchenUnitId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model ForecastSnapshot {
+  id                String       @id @default(cuid())
+  organizationId    String
+  kitchenUnitId     String?
+  date              DateTime
+  predictedDemandKg Float
+  method            String       @default("HISTORICAL_AVG")
+  inputsJson        String?
+  createdAt         DateTime     @default(now())
+  kitchenUnit       KitchenUnit? @relation(fields: [kitchenUnitId], references: [id])
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Recommendation {
+  id             String       @id @default(cuid())
+  organizationId String
+  kitchenUnitId  String?
+  type           String
+  title          String
+  detail         String?
+  status         String       @default("PENDING")
+  createdAt      DateTime     @default(now())
+  kitchenUnit    KitchenUnit? @relation(fields: [kitchenUnitId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model EndOfDayReport {
+  id              String       @id @default(cuid())
+  organizationId  String
+  kitchenUnitId   String?
+  date            DateTime
+  totalPreparedKg Float
+  totalServedKg   Float
+  totalWasteKg    Float
+  totalSurplusKg  Float
+  notes           String?
+  status          String       @default("FINAL")
+  accuracyJson    String?
+  qualityNotes    String?
+  reopenedAt      DateTime?
+  reopenReason    String?
+  createdAt       DateTime     @default(now())
+  kitchenUnit     KitchenUnit? @relation(fields: [kitchenUnitId], references: [id])
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, date])
+}
+
+model SurplusEligibilityAssessment {
+  id               String                 @id @default(cuid())
+  organizationId   String
+  kitchenUnitId    String?
+  foodDescription  String
+  quantityKg       Float
+  recordedInfoJson String?
+  humanConfirmed   Boolean                @default(false)
+  eligible         Boolean                @default(false)
+  reason           String?
+  assessedById     String?
+  createdAt        DateTime               @default(now())
+  matches          NgoMatch[]
+  redistributions  RedistributionRecord[]
+  assessedBy       User?                  @relation("AssessedBy", fields: [assessedById], references: [id])
+  kitchenUnit      KitchenUnit?           @relation(fields: [kitchenUnitId], references: [id])
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model NgoOrganization {
+  id                 String                 @id @default(cuid())
+  name               String                 @unique
+  address            String?
+  city               String?
+  contactName        String?
+  contactEmail       String?
+  contactPhone       String?
+  acceptedCategories String?
+  pickupCapable      Boolean                @default(true)
+  operatingHours     String?
+  capacityKg         Float?
+  isActive           Boolean                @default(true)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  matches            NgoMatch[]
+  redistributions    RedistributionRecord[]
+  users              User[]
+}
+
+model NgoMatch {
+  id           String                       @id @default(cuid())
+  assessmentId String
+  ngoId        String
+  status       String                       @default("PROPOSED")
+  score        Int                          @default(0)
+  reasonsJson  String?
+  deliveryJson String?
+  notes        String?
+  createdAt    DateTime                     @default(now())
+  assessment   SurplusEligibilityAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  ngo          NgoOrganization              @relation(fields: [ngoId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, ngoId])
+  @@index([assessmentId])
+  @@index([ngoId])
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  userId         String?
+  organizationId String?
+  type           String
+  title          String
+  body           String
+  token          String?
+  linkPath       String?
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  user           User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+}
+
+model RedistributionRecord {
+  id             String                        @id @default(cuid())
+  organizationId String
+  kitchenUnitId  String?
+  ngoId          String?
+  assessmentId   String?
+  quantityKg     Float
+  status         String                        @default("DRAFT")
+  pickupAt       DateTime?
+  deliveredAt    DateTime?
+  notes          String?
+  createdAt      DateTime                      @default(now())
+  assessment     SurplusEligibilityAssessment? @relation(fields: [assessmentId], references: [id])
+  kitchenUnit    KitchenUnit?                  @relation(fields: [kitchenUnitId], references: [id])
+  ngo            NgoOrganization?              @relation(fields: [ngoId], references: [id])
+  organization   Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ImpactFactor {
+  id             String    @id @default(cuid())
+  key            String
+  name           String    @default("")
+  value          Float
+  unit           String    @default("")
+  description    String?
+  source         String?
+  effectiveDate  DateTime?
+  isActive       Boolean   @default(true)
+  organizationId String?
+  category       String?
+  foodItemId     String?
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([key, organizationId, category, foodItemId])
+}
+
+model ImpactSnapshot {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  date                 DateTime
+  foodSavedKg          Float
+  wasteReducedKg       Float
+  co2AvoidedKgEstimate Float
+  costSavedEstimate    Float
+  notes                String?
+  createdAt            DateTime     @default(now())
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id             String        @id @default(cuid())
+  organizationId String?
+  userId         String?
+  action         String
+  entityType     String?
+  entityId       String?
+  metadataJson   String?
+  createdAt      DateTime      @default(now())
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model ImportJob {
+  id             String           @id @default(cuid())
+  organizationId String?
+  fileName       String
+  status         String           @default("PENDING")
+  totalRows      Int?
+  successRows    Int?
+  errorRows      Int?
+  createdAt      DateTime         @default(now())
+  completedAt    DateTime?
+  organization   Organization?    @relation(fields: [organizationId], references: [id])
+  errors         ImportRowError[]
+}
+
+model ImportRowError {
+  id           String    @id @default(cuid())
+  importJobId  String
+  rowNumber    Int
+  rawDataJson  String?
+  errorMessage String
+  createdAt    DateTime  @default(now())
+  importJob    ImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+}
+
+model BufferConfig {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  mode           String       @default("PERCENT")
+  value          Float        @default(10)
+  updatedById    String?
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model RiskThreshold {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  medKg          Float        @default(2)
+  highKg         Float        @default(5)
+  minSales       Int          @default(2)
+  minSpanMin     Int          @default(30)
+  windowsJson    String?
+  updatedById    String?
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model InventoryThreshold {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  lowStockKg     Float        @default(5)
+  nearExpiryDays Int          @default(3)
+  excessKg       Float        @default(100)
+  updatedById    String?
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model EligibilityConfig {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  minQuantityKg  Float        @default(10)
+  updatedById    String?
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ProductionTarget {
+  id             String       @id @default(cuid())
+  organizationId String
+  kitchenUnitId  String
+  foodItemId     String
+  mealType       String
+  date           DateTime
+  predictedKg    Float
+  bufferKg       Float
+  recommendedKg  Float
+  adjustedKg     Float?
+  adjustReason   String?
+  status         String       @default("PROPOSED")
+  memoryVersion  String       @default("memory-v1")
+  inputsJson     String?
+  feedbackJson   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  foodItem       FoodItem     @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+  kitchenUnit    KitchenUnit  @relation(fields: [kitchenUnitId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, kitchenUnitId, foodItemId, mealType, date])
+  @@index([organizationId, date])
+}
