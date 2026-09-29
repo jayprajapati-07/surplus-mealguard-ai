@@ -7,7 +7,7 @@ services:
     runtime: node
     plan: free
     rootDir: server
-    buildCommand: npm install && npx prisma generate && npm run build
+    buildCommand: npm install --include=dev && npx prisma generate && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -33,7 +33,7 @@ services:
   - type: static
     name: mealguard-web
     rootDir: client
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npm run build
     publishPath: dist
     routes:
       - type: rewrite
