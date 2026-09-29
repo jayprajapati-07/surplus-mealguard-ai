@@ -52,6 +52,14 @@ export function createApp() {
   );
   app.use(express.json({ limit: '256kb' }));
 
+  // Normalize consecutive slashes in request URLs (e.g. /api//auth/login -> /api/auth/login)
+  app.use((req, _res, next) => {
+    if (req.url.includes('//')) {
+      req.url = req.url.replace(/\/+/g, '/');
+    }
+    next();
+  });
+
   const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 400, standardHeaders: true, legacyHeaders: false });
   app.use('/api', limiter);
 
