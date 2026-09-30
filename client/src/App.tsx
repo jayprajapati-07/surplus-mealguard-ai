@@ -10,10 +10,8 @@ import {
   RequireMenuAccess,
   RequireImportAccess,
   RequireFoodDataAccess,
-  RequireMemoryAccess,
   RequireRedistributionAccess,
   RequireSuperAdmin,
-  RequireAuditAccess,
 } from './components/guards';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
@@ -24,8 +22,6 @@ import { OrganizationPage } from './pages/Organization';
 import { MenuPage } from './pages/MenuPage';
 import { FoodData } from './pages/FoodData';
 import { Imports } from './pages/Imports';
-import { DigitalMemory } from './pages/DigitalMemory';
-import { Flow } from './pages/Flow';
 import { Notifications } from './pages/Notifications';
 import { Inventory } from './pages/Inventory';
 import { EndOfDay } from './pages/EndOfDay';
@@ -35,8 +31,6 @@ import { Redistribution } from './pages/Redistribution';
 import { NgoRegistry } from './pages/NgoRegistry';
 import { Analytics } from './pages/Analytics';
 import { Reports } from './pages/Reports';
-import { AuditLog } from './pages/AuditLog';
-import { DemoGuide } from './pages/DemoGuide';
 
 function PublicShell({ children }: { children: React.ReactNode }) {
   return (
@@ -273,17 +267,13 @@ export default function App() {
               }
             />
 
+            {/* REMOVED KITCHEN INTELLIGENCE ROUTES -> REDIRECT TO DASHBOARD */}
+            <Route path="/demo-guide" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/memory" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/flow" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/audit" element={<Navigate to="/dashboard" replace />} />
+
             {/* ADDITIONAL INSTITUTION WORKSPACE PAGES */}
-            <Route
-              path="/demo-guide"
-              element={
-                <Layout>
-                  <RequireAuth>
-                    <DemoGuide />
-                  </RequireAuth>
-                </Layout>
-              }
-            />
             <Route
               path="/food-data"
               element={
@@ -309,36 +299,12 @@ export default function App() {
               }
             />
             <Route
-              path="/memory"
-              element={
-                <Layout>
-                  <RequireAuth>
-                    <RequireMemoryAccess>
-                      <DigitalMemory />
-                    </RequireMemoryAccess>
-                  </RequireAuth>
-                </Layout>
-              }
-            />
-            <Route
               path="/analytics"
               element={
                 <Layout>
                   <RequireAuth>
                     <RequireFoodDataAccess>
                       <Analytics />
-                    </RequireFoodDataAccess>
-                  </RequireAuth>
-                </Layout>
-              }
-            />
-            <Route
-              path="/flow"
-              element={
-                <Layout>
-                  <RequireAuth>
-                    <RequireFoodDataAccess>
-                      <Flow />
                     </RequireFoodDataAccess>
                   </RequireAuth>
                 </Layout>
@@ -388,18 +354,6 @@ export default function App() {
                     <RequireSuperAdmin>
                       <NgoRegistry />
                     </RequireSuperAdmin>
-                  </RequireAuth>
-                </Layout>
-              }
-            />
-            <Route
-              path="/audit"
-              element={
-                <Layout>
-                  <RequireAuth>
-                    <RequireAuditAccess>
-                      <AuditLog />
-                    </RequireAuditAccess>
                   </RequireAuth>
                 </Layout>
               }

@@ -111,7 +111,6 @@ export function Dashboard() {
 
   // Explainability drawer
   const [why, setWhy] = useState<TargetRow | null>(null);
-  const [live, setLive] = useState<{ produced: number; sold: number; wasted: number; entryCount: number } | null>(null);
 
   // Inline adjustment state
   const [adjId, setAdjId] = useState<string | null>(null);
@@ -166,14 +165,6 @@ export function Dashboard() {
     try {
       const d = await api<Overview>(`/dashboard/overview?kitchenUnitId=${kitchenId}&date=${date}`);
       setOv(d);
-      try {
-        const liveRes = await api<{ dayTotals: { produced: number; sold: number; wasted: number }; entryCount: number }>(
-          `/flow/today?kitchenUnitId=${kitchenId}&date=${date}`
-        );
-        setLive({ ...liveRes.dayTotals, entryCount: liveRes.entryCount });
-      } catch {
-        setLive(null);
-      }
       if (d.buffer) {
         setBufMode(d.buffer.mode);
         setBufValue(String(d.buffer.value));

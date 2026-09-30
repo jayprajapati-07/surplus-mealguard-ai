@@ -26,15 +26,13 @@ describe('journey: target and food flow', () => {
     const tg = await req(`/targets?kitchenUnitId=${kitchenId}&date=${DAY}`, { headers: h });
     assert.ok((tg.data.targets || []).some((t) => t.foodItemId === foodId));
 
-    for (const [kind, qty] of [['PRODUCTION', 25], ['SALE', 10], ['SALE', 8], ['WASTE', 1]]) {
-      const e = await req('/flow/entries', { method: 'POST', headers: h,
-        body: JSON.stringify({ kitchenUnitId: kitchenId, foodItemId: foodId, mealType: 'LUNCH', entryKind: kind, quantityKg: qty }) });
-      assert.equal(e.status, 201, `${kind}: ${JSON.stringify(e.data).slice(0, 150)}`);
-    }
-    const t = await req(`/flow/today?kitchenUnitId=${kitchenId}&date=${DAY}`, { headers: h });
-    assert.equal(t.status, 200);
-    assert.equal(t.data.dayTotals.produced, 25);
-    assert.equal(t.data.dayTotals.sold, 18);
-    assert.equal(t.data.dayTotals.wasted, 1);
+    const rec = await req('/food-records', { method: 'POST', headers: h,
+      body: JSON.stringify({ kitchenUnitId: kitchenId, foodItemId: foodId, mealType: 'LUNCH', date: DAY,
+        producedKg: 25, soldKg: 18, wasteKg: 1, remainingKg: 6 }) });
+    assert.equal(rec.status, 201);
+
+    const recs = await req(`/food-records?kitchenUnitId=${kitchenId}&date=${DAY}`, { headers: h });
+    assert.equal(recs.status, 200);
+    assert.ok(recs.data.records.length >= 1);
   });
 });

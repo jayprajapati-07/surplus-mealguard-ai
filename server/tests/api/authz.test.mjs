@@ -36,7 +36,7 @@ describe('authorization', () => {
   before(async () => { await seedFixtures(); });
 
   it('rejects unauthenticated access with 401', async () => {
-    for (const p of ['/food-items', '/food-records', '/menus', '/inventory', '/dashboard/overview', '/memory/summary']) {
+    for (const p of ['/food-items', '/food-records', '/menus', '/inventory', '/dashboard/overview', '/targets']) {
       const r = await req(p);
       assert.equal(r.status, 401, p);
     }

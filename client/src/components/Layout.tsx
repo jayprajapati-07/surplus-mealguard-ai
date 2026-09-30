@@ -71,10 +71,6 @@ export function Layout({ children }: { children: ReactNode }) {
     if (p.includes('reports')) return 'Reports';
     if (p.includes('menu-management') || p.includes('menu')) return 'Menu Management';
     if (p.includes('settings') || p.includes('organization')) return 'Settings';
-    if (p.includes('flow')) return 'Food Flow';
-    if (p.includes('memory')) return 'Digital Memory';
-    if (p.includes('demo-guide')) return 'SIH Demo Guide';
-    if (p.includes('audit')) return 'Audit Log';
     return 'Main Dashboard';
   };
 
@@ -306,56 +302,6 @@ export function Layout({ children }: { children: ReactNode }) {
                   </NavLink>
                 )}
               </nav>
-
-              {/* Secondary Operational Tools */}
-              <div className="border-t border-stone-100 pt-3">
-                <p className="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                  Kitchen Intelligence
-                </p>
-                <div className="space-y-0.5">
-                  <NavLink
-                    to="/demo-guide"
-                    onClick={() => setMenuOpen(false)}
-                    className={({ isActive }) => linkClass(isActive)}
-                  >
-                    <span>📖</span>
-                    <span>SIH Demo Story</span>
-                  </NavLink>
-
-                  {user.role && FLOW_ROLES.includes(user.role) && (
-                    <NavLink
-                      to="/flow"
-                      onClick={() => setMenuOpen(false)}
-                      className={({ isActive }) => linkClass(isActive)}
-                    >
-                      <span>🔄</span>
-                      <span>Food Flow Live</span>
-                    </NavLink>
-                  )}
-
-                  {user.role && FLOW_ROLES.includes(user.role) && (
-                    <NavLink
-                      to="/memory"
-                      onClick={() => setMenuOpen(false)}
-                      className={({ isActive }) => linkClass(isActive)}
-                    >
-                      <span>🧠</span>
-                      <span>Digital Memory</span>
-                    </NavLink>
-                  )}
-
-                  {user.role && AUDIT_ROLES.includes(user.role) && (
-                    <NavLink
-                      to="/audit"
-                      onClick={() => setMenuOpen(false)}
-                      className={({ isActive }) => linkClass(isActive)}
-                    >
-                      <span>🔒</span>
-                      <span>Audit Logs</span>
-                    </NavLink>
-                  )}
-                </div>
-              </div>
 
               {/* Sidebar Logout button */}
               <div className="border-t border-stone-100 pt-2">

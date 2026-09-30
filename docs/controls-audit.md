@@ -1,13 +1,13 @@
 # Interactive Controls & UI Audit Checklist (No Dead Controls)
 
-Generated on: 2026-09-30T06:28:12.285Z
+Generated on: 2026-09-30T06:50:58.625Z
 
 ## Summary Statistics
-- **Files Audited**: 31
-- **Buttons Verified**: 119
-- **Links & Navigation Routes Verified**: 26
-- **Forms & Submission Handlers Verified**: 23
-- **API Endpoint Calls Verified**: 97
+- **Files Audited**: 27
+- **Buttons Verified**: 110
+- **Links & Navigation Routes Verified**: 22
+- **Forms & Submission Handlers Verified**: 20
+- **API Endpoint Calls Verified**: 80
 - **Violations Found**: 0
 
 ## Verification Status
@@ -52,10 +52,6 @@ Generated on: 2026-09-30T06:28:12.285Z
 | Link | `/reports` | ✅ PASS |
 | Link | `/menu-management` | ✅ PASS |
 | Link | `/settings` | ✅ PASS |
-| Link | `/demo-guide` | ✅ PASS |
-| Link | `/flow` | ✅ PASS |
-| Link | `/memory` | ✅ PASS |
-| Link | `/audit` | ✅ PASS |
 | API Call | `/notifications/unread-count` | ✅ PASS |
 
 ### `client/src/pages/Analytics.tsx`
@@ -64,16 +60,6 @@ Generated on: 2026-09-30T06:28:12.285Z
 | Button | `void load()} disabled={loading` | ✅ PASS |
 | API Call | `/food-items` | ✅ PASS |
 | API Call | `/analytics/overview` | ✅ PASS |
-
-### `client/src/pages/AuditLog.tsx`
-| Element Type | Label / Target | Status |
-| --- | --- | --- |
-| Button | `{loading ? 'Refreshing…' : 'Re` | ✅ PASS |
-| Button | `Apply Filters` | ✅ PASS |
-| Button | `Reset` | ✅ PASS |
-| Form | `form` | ✅ PASS |
-| API Call | `/admin/audit-log` | ✅ PASS |
-| API Call | `/admin/audit-log` | ✅ PASS |
 
 ### `client/src/pages/AuthExtras.tsx`
 | Element Type | Label / Target | Status |
@@ -114,23 +100,12 @@ Generated on: 2026-09-30T06:28:12.285Z
 | Form | `form` | ✅ PASS |
 | API Call | `/food-items` | ✅ PASS |
 | API Call | `/dashboard/overview` | ✅ PASS |
-| API Call | `/flow/today` | ✅ PASS |
 | API Call | `/targets/generate` | ✅ PASS |
 | API Call | `/targets/buffer` | ✅ PASS |
 | API Call | `/targets/` | ✅ PASS |
 | API Call | `/food-items` | ✅ PASS |
 | API Call | `/targets/quick-target` | ✅ PASS |
 | API Call | `/food-records` | ✅ PASS |
-
-### `client/src/pages/DigitalMemory.tsx`
-| Element Type | Label / Target | Status |
-| --- | --- | --- |
-| Button | `{ setKitchen(''); setFood('');` | ✅ PASS |
-| Button | `{rBusy ? 'Refreshing…' : 'Refr` | ✅ PASS |
-| API Call | `/memory/summary` | ✅ PASS |
-| API Call | `/memory/forecast` | ✅ PASS |
-| API Call | `/memory/snapshots` | ✅ PASS |
-| API Call | `/memory/refresh` | ✅ PASS |
 
 ### `client/src/pages/Eligibility.tsx`
 | Element Type | Label / Target | Status |
@@ -159,26 +134,6 @@ Generated on: 2026-09-30T06:28:12.285Z
 | API Call | `/eod/close` | ✅ PASS |
 | API Call | `/eod/preview` | ✅ PASS |
 | API Call | `/eod/reopen` | ✅ PASS |
-
-### `client/src/pages/Flow.tsx`
-| Element Type | Label / Target | Status |
-| --- | --- | --- |
-| Button | `{saving ? 'Saving…' : 'Save en` | ✅ PASS |
-| Button | `setOpenAction(openAction?.key ` | ✅ PASS |
-| Button | `void submitAction(rk)} disable` | ✅ PASS |
-| Button | `{tBusy ? 'Saving…' : 'Save ban` | ✅ PASS |
-| Form | `form` | ✅ PASS |
-| Form | `form` | ✅ PASS |
-| API Call | `/food-items` | ✅ PASS |
-| API Call | `/flow/entries` | ✅ PASS |
-| API Call | `/flow/today` | ✅ PASS |
-| API Call | `/flow/risk` | ✅ PASS |
-| API Call | `/risk-thresholds` | ✅ PASS |
-| API Call | `/flow/entries` | ✅ PASS |
-| API Call | `/flow/actions/adjust-production` | ✅ PASS |
-| API Call | `/flow/actions/special-offer` | ✅ PASS |
-| API Call | `/flow/actions/prepare-redistribution` | ✅ PASS |
-| API Call | `/risk-thresholds` | ✅ PASS |
 
 ### `client/src/pages/FoodData.tsx`
 | Element Type | Label / Target | Status |
