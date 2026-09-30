@@ -96,7 +96,7 @@ export function Layout({ children }: { children: ReactNode }) {
       : 'group flex items-center space-x-3 px-3.5 py-2.5 text-[#98D8BA] hover:bg-[#003B29] hover:text-white rounded-xl transition-all duration-200 font-medium text-[14.5px]';
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#EEF5F1] text-[#0C2741] overflow-x-hidden font-sans">
+    <div className="h-screen flex flex-col bg-[#EEF5F1] text-[#0C2741] overflow-hidden font-sans">
       {/* Toast Feedback Container */}
       <div
         id="toastNotification"
@@ -117,7 +117,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
 
       {/* BEGIN: TopBar */}
-      <header className="animate-header w-full bg-[#004C35] text-white h-[74px] px-4 md:px-6 flex items-center justify-between shadow-sm flex-shrink-0 z-30 transition-all duration-300 sticky top-0 border-b border-[#003B29]">
+      <header className="animate-header w-full bg-[#004C35] text-white h-[74px] px-4 md:px-6 flex items-center justify-between shadow-sm flex-shrink-0 z-30 border-b border-[#003B29]">
         {/* Left: Hamburger (Mobile/Tablet only) + Brand Logo & Title */}
         <div className="flex items-center space-x-3 md:space-x-3.5">
           {user && (
@@ -246,7 +246,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* END: TopBar */}
 
       {!online && (
-        <div role="alert" className="bg-amber-600 px-4 py-2 text-center text-xs font-semibold text-white">
+        <div role="alert" className="bg-amber-600 px-4 py-2 text-center text-xs font-semibold text-white flex-shrink-0">
           ⚠ You appear to be offline. Network requests may fail until connection is restored.
         </div>
       )}
@@ -262,13 +262,13 @@ export function Layout({ children }: { children: ReactNode }) {
       />
 
       {/* Main Container */}
-      <div className="flex flex-1 w-full relative min-h-0">
+      <div className="flex flex-1 w-full relative min-h-0 overflow-hidden">
         {/* BEGIN: LeftSidebar */}
         {user && (
           <aside
             aria-label="Sidebar Navigation"
             id="mainSidebar"
-            className={`animate-sidebar fixed inset-y-0 left-0 z-50 lg:z-20 w-[260px] lg:w-[270px] max-w-[85vw] h-full lg:h-[calc(100vh-74px)] lg:sticky lg:top-[74px] bg-[#004C35] text-white border-r border-[#003B29] shadow-2xl lg:shadow-none flex flex-col justify-between py-5 px-3.5 custom-scrollbar-dark overflow-y-auto transform transition-transform duration-300 ease-in-out flex-shrink-0 ${
+            className={`animate-sidebar fixed inset-y-0 left-0 z-50 lg:static lg:z-20 w-[260px] lg:w-[270px] max-w-[85vw] h-full flex-shrink-0 bg-[#004C35] text-white border-r border-[#003B29] shadow-2xl lg:shadow-none flex flex-col justify-between py-5 px-3.5 custom-scrollbar-dark overflow-y-auto transform transition-transform duration-300 ease-in-out ${
               menuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
             }`}
           >
@@ -421,7 +421,7 @@ export function Layout({ children }: { children: ReactNode }) {
         {/* END: LeftSidebar */}
 
         {/* Main Content Viewport */}
-        <main className="flex-1 flex flex-col space-y-6 p-4 sm:p-6 lg:p-8 min-w-0 overflow-x-hidden">
+        <main className="flex-1 h-full min-w-0 overflow-y-auto custom-scrollbar p-4 sm:p-6 lg:p-8 space-y-6">
           {children}
         </main>
       </div>
