@@ -1,10 +1,10 @@
 # Interactive Controls & UI Audit Checklist (No Dead Controls)
 
-Generated on: 2026-09-30T08:04:59.108Z
+Generated on: 2026-09-30T08:17:13.390Z
 
 ## Summary Statistics
 - **Files Audited**: 27
-- **Buttons Verified**: 112
+- **Buttons Verified**: 116
 - **Links & Navigation Routes Verified**: 21
 - **Forms & Submission Handlers Verified**: 20
 - **API Endpoint Calls Verified**: 80
@@ -261,7 +261,11 @@ Generated on: 2026-09-30T08:04:59.108Z
 ### `client/src/pages/Organization.tsx`
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
+| Button | `{                 if (!isEditi` | ✅ PASS |
+| Button | `{                     setIsEdi` | ✅ PASS |
 | Button | `{busy ? 'Saving…' : 'Save Chan` | ✅ PASS |
+| Button | `{                 setIsAddingK` | ✅ PASS |
+| Button | `{                     setIsAdd` | ✅ PASS |
 | Button | `{kBusy ? 'Adding…' : 'Add Kitc` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | Form | `form` | ✅ PASS |
