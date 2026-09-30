@@ -1,6 +1,6 @@
 # Interactive Controls & UI Audit Checklist (No Dead Controls)
 
-Generated on: 2026-09-30T07:54:41.996Z
+Generated on: 2026-09-30T08:04:59.108Z
 
 ## Summary Statistics
 - **Files Audited**: 27
@@ -40,7 +40,7 @@ Generated on: 2026-09-30T07:54:41.996Z
 | Button | `{                 if (showNoti` | ✅ PASS |
 | Button | `{signingOut ? 'Signing out…' :` | ✅ PASS |
 | Button | `setMenuOpen(false)}           ` | ✅ PASS |
-| Button | `<svg className="w-5 h-5 text-[` | ✅ PASS |
+| Button | `<svg className="w-5 h-5 text-r` | ✅ PASS |
 | Link | `/settings` | ✅ PASS |
 | Link | `/settings` | ✅ PASS |
 | Link | `/settings` | ✅ PASS |

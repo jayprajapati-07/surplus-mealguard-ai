@@ -92,8 +92,8 @@ export function Layout({ children }: { children: ReactNode }) {
 
   const navLinkClass = (isActive: boolean) =>
     isActive
-      ? 'flex items-center space-x-3 px-3.5 py-2.5 bg-[#006B48] text-white rounded-xl shadow-sm font-semibold text-[14.5px] transition-all duration-200 hover:shadow'
-      : 'group flex items-center space-x-3 px-3.5 py-2.5 text-[#334D5C] hover:bg-[#F2F7F4] hover:text-[#0C2741] rounded-xl transition-all duration-200 font-medium text-[14.5px]';
+      ? 'flex items-center space-x-3 px-3.5 py-2.5 bg-[#006B48] text-white rounded-xl shadow-sm font-semibold text-[14.5px] border border-white/10 transition-all duration-200 hover:shadow'
+      : 'group flex items-center space-x-3 px-3.5 py-2.5 text-[#98D8BA] hover:bg-[#003B29] hover:text-white rounded-xl transition-all duration-200 font-medium text-[14.5px]';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#EEF5F1] text-[#0C2741] overflow-x-hidden font-sans">
@@ -117,7 +117,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
 
       {/* BEGIN: TopBar */}
-      <header className="animate-header w-full bg-[#004C35] text-white h-[74px] px-4 md:px-6 flex items-center justify-between shadow-sm flex-shrink-0 z-30 transition-all duration-300 sticky top-0">
+      <header className="animate-header w-full bg-[#004C35] text-white h-[74px] px-4 md:px-6 flex items-center justify-between shadow-sm flex-shrink-0 z-30 transition-all duration-300 sticky top-0 border-b border-[#003B29]">
         {/* Left: Hamburger (Mobile/Tablet only) + Brand Logo & Title */}
         <div className="flex items-center space-x-3 md:space-x-3.5">
           {user && (
@@ -262,13 +262,13 @@ export function Layout({ children }: { children: ReactNode }) {
       />
 
       {/* Main Container */}
-      <div className="flex flex-1 p-3 md:p-5 gap-5 overflow-hidden max-w-[1720px] mx-auto w-full relative">
+      <div className="flex flex-1 w-full relative min-h-0">
         {/* BEGIN: LeftSidebar */}
         {user && (
           <aside
             aria-label="Sidebar Navigation"
             id="mainSidebar"
-            className={`animate-sidebar fixed inset-y-0 left-0 z-50 w-[285px] lg:w-[275px] max-w-[85vw] h-full lg:h-[calc(100vh-100px)] lg:sticky lg:top-[90px] bg-white lg:rounded-2xl border-r lg:border border-[#E3ECE6] shadow-2xl lg:shadow-sm flex flex-col justify-between py-5 px-3.5 custom-scrollbar overflow-y-auto transform transition-transform duration-300 ease-in-out flex-shrink-0 ${
+            className={`animate-sidebar fixed inset-y-0 left-0 z-50 lg:z-20 w-[260px] lg:w-[270px] max-w-[85vw] h-full lg:h-[calc(100vh-74px)] lg:sticky lg:top-[74px] bg-[#004C35] text-white border-r border-[#003B29] shadow-2xl lg:shadow-none flex flex-col justify-between py-5 px-3.5 custom-scrollbar-dark overflow-y-auto transform transition-transform duration-300 ease-in-out flex-shrink-0 ${
               menuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
             }`}
           >
@@ -276,12 +276,12 @@ export function Layout({ children }: { children: ReactNode }) {
               {/* Logo Header in Sidebar & Close Button for mobile drawer */}
               <div className="flex items-center justify-between px-3 py-1">
                 <div className="flex items-center space-x-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center transition-transform duration-300 hover:rotate-6">
-                    <svg className="w-5 h-5 text-[#006B48]" fill="currentColor" viewBox="0 0 24 24">
+                  <div className="w-8 h-8 rounded-lg bg-[#005c41] flex items-center justify-center transition-transform duration-300 hover:rotate-6">
+                    <svg className="w-5 h-5 text-[#22C55E]" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25V7.5c4 0 7.5.5 8 1.5z" />
                     </svg>
                   </div>
-                  <span className="font-bold text-[16px] tracking-tight text-[#0C2741]">
+                  <span className="font-bold text-[16px] tracking-tight text-white">
                     Surplus MealGuard AI
                   </span>
                 </div>
@@ -289,7 +289,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 <button
                   aria-label="Close sidebar menu"
                   onClick={() => setMenuOpen(false)}
-                  className="lg:hidden p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors active:scale-95"
+                  className="lg:hidden p-1.5 text-white/80 hover:text-white hover:bg-[#003B29] rounded-lg transition-colors active:scale-95"
                   id="closeSidebarBtn"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -307,7 +307,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                     className={({ isActive }) => navLinkClass(isActive || location.pathname === '/')}
                   >
-                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 flex-shrink-0 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span>Dashboard</span>
@@ -321,7 +321,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                     className={({ isActive }) => navLinkClass(isActive || location.pathname === '/redistribution')}
                   >
-                    <svg className="w-5 h-5 flex-shrink-0 text-[#EAB308] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 flex-shrink-0 text-[#FBBF24] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span>Food Distribution</span>
@@ -335,7 +335,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                     className={({ isActive }) => navLinkClass(isActive || location.pathname === '/eod')}
                   >
-                    <svg className="w-5 h-5 flex-shrink-0 text-gray-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 flex-shrink-0 text-[#98D8BA] group-hover:text-white transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span>End of Day Report</span>
@@ -349,7 +349,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                     className={({ isActive }) => navLinkClass(isActive || location.pathname === '/waste')}
                   >
-                    <svg className="w-5 h-5 flex-shrink-0 text-blue-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 flex-shrink-0 text-[#60A5FA] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span>Waste Analysis</span>
@@ -363,7 +363,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                     className={({ isActive }) => navLinkClass(isActive)}
                   >
-                    <svg className="w-5 h-5 flex-shrink-0 text-gray-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 flex-shrink-0 text-[#98D8BA] group-hover:text-white transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span>Reports</span>
@@ -377,7 +377,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                     className={({ isActive }) => navLinkClass(isActive || location.pathname === '/menu')}
                   >
-                    <svg className="w-5 h-5 flex-shrink-0 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 flex-shrink-0 text-[#FCD34D] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span>Menu Management</span>
@@ -391,7 +391,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                     className={({ isActive }) => navLinkClass(isActive || location.pathname === '/organization')}
                   >
-                    <svg className="w-5 h-5 flex-shrink-0 text-gray-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 flex-shrink-0 text-gray-300 group-hover:text-white transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" strokeLinecap="round" strokeLinejoin="round" />
                       <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -402,15 +402,15 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
 
             {/* Bottom Logout Button */}
-            <div className="pt-4 border-t border-[#E7EFEA]">
+            <div className="pt-4 border-t border-[#005e42]">
               <button
                 type="button"
                 onClick={handleLogout}
                 disabled={signingOut}
-                className="w-full flex items-center space-x-3 px-3.5 py-2.5 text-red-600 hover:bg-red-50 rounded-xl font-medium text-sm transition-all duration-200 active:scale-95 disabled:opacity-50"
+                className="w-full flex items-center space-x-3 px-3.5 py-2.5 text-red-300 hover:text-red-200 hover:bg-[#003B29] rounded-xl font-medium text-sm transition-all duration-200 active:scale-95 disabled:opacity-50"
                 aria-label="Log out"
               >
-                <svg className="w-5 h-5 text-[#B91C1C] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <span className="font-medium text-[15px]">{signingOut ? 'Signing out…' : 'Logout'}</span>
@@ -421,7 +421,7 @@ export function Layout({ children }: { children: ReactNode }) {
         {/* END: LeftSidebar */}
 
         {/* Main Content Viewport */}
-        <main className="flex-1 flex flex-col space-y-5 overflow-y-auto custom-scrollbar pr-1 w-full min-w-0">
+        <main className="flex-1 flex flex-col space-y-6 p-4 sm:p-6 lg:p-8 min-w-0 overflow-x-hidden">
           {children}
         </main>
       </div>

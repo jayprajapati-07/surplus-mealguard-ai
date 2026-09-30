@@ -27,6 +27,21 @@ body {
   border-radius: 4px;
 }
 
+.custom-scrollbar-dark::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar-dark::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar-dark::-webkit-scrollbar-thumb {
+  background: #003B29;
+  border-radius: 4px;
+}
+.custom-scrollbar-dark::-webkit-scrollbar-thumb:hover {
+  background: #005e42;
+}
+
 /* Choreographed Animations from code.html */
 @keyframes slideDownHeader {
   from {
