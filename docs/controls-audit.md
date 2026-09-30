@@ -1,10 +1,10 @@
 # Interactive Controls & UI Audit Checklist (No Dead Controls)
 
-Generated on: 2026-09-30T07:50:14.694Z
+Generated on: 2026-09-30T07:54:41.996Z
 
 ## Summary Statistics
 - **Files Audited**: 27
-- **Buttons Verified**: 113
+- **Buttons Verified**: 112
 - **Links & Navigation Routes Verified**: 21
 - **Forms & Submission Handlers Verified**: 20
 - **API Endpoint Calls Verified**: 80
@@ -80,7 +80,6 @@ Generated on: 2026-09-30T07:50:14.694Z
 ### `client/src/pages/Dashboard.tsx`
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
-| Button | `<span>⚡</span>               <` | ✅ PASS |
 | Button | `{                 if (rows.len` | ✅ PASS |
 | Button | `{                 setTargetMod` | ✅ PASS |
 | Button | `{                 setRecordMod` | ✅ PASS |

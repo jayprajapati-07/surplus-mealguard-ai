@@ -422,61 +422,6 @@ export function Dashboard() {
 
   return (
     <div className="space-y-5">
-      {/* Kitchen Selector & Control Bar */}
-      <div className="bg-white rounded-2xl border border-[#E3ECE6] p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center space-x-3">
-          <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-[#006B48]">
-            {org.name} · {org.city}
-          </span>
-          <p className="text-xs text-stone-500 font-medium hidden sm:inline">
-            Real-time food flow coordination, AI target tuning, and surplus redistribution
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div>
-            <label htmlFor="db-kitchen" className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">
-              Kitchen Unit
-            </label>
-            <select
-              id="db-kitchen"
-              value={kitchenId}
-              onChange={(e) => setKitchenId(e.target.value)}
-              className="mt-0.5 rounded-xl border border-[#E3ECE6] px-3 py-1.5 text-xs bg-white font-medium text-[#0C2741] focus:ring-1 focus:ring-[#006B48]"
-            >
-              {kitchens.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="db-date" className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">
-              Service Date
-            </label>
-            <input
-              id="db-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="mt-0.5 rounded-xl border border-[#E3ECE6] px-3 py-1.5 text-xs bg-white font-medium text-[#0C2741] focus:ring-1 focus:ring-[#006B48]"
-            />
-          </div>
-
-          {canManage && (
-            <button
-              onClick={onGenerate}
-              disabled={genBusy || !kitchenId}
-              className="mt-3.5 sm:mt-4 rounded-xl bg-[#006B48] px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-[#004C35] disabled:opacity-60 transition-all flex items-center space-x-1.5 active:scale-95"
-            >
-              <span>⚡</span>
-              <span>{genBusy ? 'Generating…' : 'Generate AI Targets'}</span>
-            </button>
-          )}
-        </div>
-      </div>
 
       {genMsg && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-900" role="status">
