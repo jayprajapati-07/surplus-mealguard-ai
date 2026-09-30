@@ -109,8 +109,8 @@ function num(v: unknown): number | null {
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
-// POST /api/imports/parse — detect headers, suggest mapping, preview (no DB writes)
-router.post('/parse', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'), (req: AuthenticatedRequest, res) => {
+// POST /api/imports/parse or /api/imports/preview — detect headers, suggest mapping, preview (no DB writes)
+router.post(['/parse', '/preview'], requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'), (req: AuthenticatedRequest, res) => {
   upload.single('file')(req as never, res as never, async (err?: unknown) => {
     if (err) return res.status(400).json({ error: err instanceof Error ? err.message : 'Upload failed.' });
     const f = (req as unknown as { file?: Express.Multer.File }).file;
@@ -119,13 +119,15 @@ router.post('/parse', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_M
       const { headers, rows } = parseFile(f.buffer, f.originalname);
       if (headers.length === 0) return res.status(400).json({ error: 'No header row found. Use the sample template format.' });
       const { mapping, needsMapping } = suggestMapping(headers);
+      const preview = rows.slice(0, 10);
       return res.json({
         filename: f.originalname,
         headers,
         mapping,
         needsMapping,
         rowCount: rows.length,
-        preview: rows.slice(0, 5),
+        preview: preview.slice(0, 5),
+        previewRows: preview,
         notice: needsMapping
           ? 'Some columns were uncertain. Please confirm the column mapping before importing.'
           : 'Columns detected with confidence. You can still adjust the mapping before importing.',
@@ -142,8 +144,8 @@ const confirmSchema = z.object({
   defaultMeal: z.string().optional(),
 });
 
-// POST /api/imports/confirm — validate rows, create records, persist job + row errors
-router.post('/confirm', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'), (req: AuthenticatedRequest, res) => {
+// POST /api/imports/confirm or /api/imports/execute — validate rows, create records, persist job + row errors
+router.post(['/confirm', '/execute'], requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'), (req: AuthenticatedRequest, res) => {
   upload.single('file')(req as never, res as never, async (err?: unknown) => {
     if (err) return res.status(400).json({ error: err instanceof Error ? err.message : 'Upload failed.' });
     try {

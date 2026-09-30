@@ -1,6 +1,6 @@
 import { useState, type FormEvent, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, API_BASE } from '../api';
+import { api, API_BASE, getToken } from '../api';
 import { useAuth } from '../auth-context';
 
 export const INSTITUTION_OPTIONS = [
@@ -144,21 +144,35 @@ export function SetupPage() {
     formData.append('file', selectedFile);
 
     try {
-      setUploadProgress(60);
-      const res = await fetch(`${API_BASE}/imports/preview`, {
+      setUploadProgress(50);
+      const token = getToken() ?? localStorage.getItem('mg_token') ?? '';
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let res = await fetch(`${API_BASE}/imports/parse`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('mg_token') ?? ''}`,
-        },
+        headers,
         body: formData,
       });
+
+      if (res.status === 404) {
+        const retryFormData = new FormData();
+        retryFormData.append('file', selectedFile);
+        res = await fetch(`${API_BASE}/imports/preview`, {
+          method: 'POST',
+          headers,
+          body: retryFormData,
+        });
+      }
+
       setUploadProgress(90);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to parse file preview.');
       }
       const data = await res.json();
-      setPreviewRows((data.previewRows as Array<Record<string, unknown>>) || []);
+      const rows = (data.previewRows || data.preview || []) as Array<Record<string, unknown>>;
+      setPreviewRows(rows);
       setUploadProgress(100);
     } catch (e) {
       setPreviewError(e instanceof Error ? e.message : 'Could not parse data file.');
@@ -324,13 +338,25 @@ export function SetupPage() {
         formData.append('file', file);
         formData.append('kitchenUnitId', kitchenId);
         try {
-          await fetch(`${API_BASE}/imports/execute`, {
+          const token = getToken() ?? localStorage.getItem('mg_token') ?? '';
+          const headers: Record<string, string> = {};
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+
+          let impRes = await fetch(`${API_BASE}/imports/confirm`, {
             method: 'POST',
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem('mg_token') ?? ''}`,
-            },
+            headers,
             body: formData,
           });
+          if (impRes.status === 404) {
+            const retryFormData = new FormData();
+            retryFormData.append('file', file);
+            retryFormData.append('kitchenUnitId', kitchenId);
+            await fetch(`${API_BASE}/imports/execute`, {
+              method: 'POST',
+              headers,
+              body: retryFormData,
+            });
+          }
         } catch {
           // non-blocking
         }
