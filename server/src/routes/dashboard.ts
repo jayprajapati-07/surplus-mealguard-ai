@@ -127,6 +127,7 @@ router.get('/overview', requireRole(...READ_ROLES), async (req: AuthenticatedReq
   ].slice(0, 10);
 
   const bufferRow = await prisma.bufferConfig.findUnique({ where: { organizationId: orgId } });
+  const activeNgosCount = await prisma.ngoOrganization.count({ where: { isActive: true } });
 
   return res.json({
     date: dayKey,
@@ -136,6 +137,7 @@ router.get('/overview', requireRole(...READ_ROLES), async (req: AuthenticatedReq
     confidence: { level: rows.length === 0 ? 'low' : worst, basedOn, targets: rows.length },
     recommendations,
     buffer: bufferRow ? { mode: bufferRow.mode, value: bufferRow.value } : null,
+    activeNgosCount,
   });
 });
 

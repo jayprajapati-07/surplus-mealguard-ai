@@ -277,4 +277,78 @@ router.get('/', requireRole(...READ_ROLES), async (req: AuthenticatedRequest, re
   });
 });
 
+// POST /api/targets/quick-target — Allows setting/updating today's target directly from the dashboard card
+router.post('/quick-target', requireRole(...MANAGE_ROLES), async (req: AuthenticatedRequest, res) => {
+  const schema = z.object({
+    kitchenUnitId: z.string().min(1, 'Please select a kitchen unit.'),
+    foodItemId: z.string().min(1, 'Please select a food item.'),
+    date: z.string().min(1, 'Date is required.'),
+    mealType: z.enum(['BREAKFAST', 'LUNCH', 'DINNER']),
+    targetKg: z.coerce.number().positive('Target must be positive (kg).').max(1000000),
+    demandKg: z.coerce.number().min(0).optional(),
+    reason: z.string().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return zodError(res, parsed.error);
+  const orgId = await orgIdFor(req, res);
+  if (!orgId) return;
+
+  const d = new Date(parsed.data.date);
+  const day = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const nextDay = new Date(day.getTime() + 86400000);
+
+  const existing = await prisma.productionTarget.findFirst({
+    where: {
+      organizationId: orgId,
+      kitchenUnitId: parsed.data.kitchenUnitId,
+      foodItemId: parsed.data.foodItemId,
+      mealType: parsed.data.mealType,
+      date: { gte: day, lt: nextDay },
+    },
+  });
+
+  let saved;
+  const demand = parsed.data.demandKg ?? parsed.data.targetKg;
+  if (existing) {
+    saved = await prisma.productionTarget.update({
+      where: { id: existing.id },
+      data: {
+        recommendedKg: parsed.data.targetKg,
+        adjustedKg: parsed.data.targetKg,
+        adjustReason: parsed.data.reason || 'Updated from dashboard',
+        status: 'MANUAL',
+      },
+      include: { foodItem: true, kitchenUnit: true },
+    });
+  } else {
+    saved = await prisma.productionTarget.create({
+      data: {
+        organizationId: orgId,
+        kitchenUnitId: parsed.data.kitchenUnitId,
+        foodItemId: parsed.data.foodItemId,
+        mealType: parsed.data.mealType,
+        date: day,
+        predictedKg: demand,
+        bufferKg: 0,
+        recommendedKg: parsed.data.targetKg,
+        adjustedKg: parsed.data.targetKg,
+        adjustReason: parsed.data.reason || 'Manual target set from dashboard',
+        status: 'MANUAL',
+        memoryVersion: 'manual-v1',
+      },
+      include: { foodItem: true, kitchenUnit: true },
+    });
+  }
+
+  await audit('targets.set', {
+    userId: req.userId,
+    organizationId: orgId,
+    entityType: 'ProductionTarget',
+    entityId: saved.id,
+    metadata: { targetKg: parsed.data.targetKg, mealType: parsed.data.mealType },
+  });
+
+  return res.json({ message: 'Today’s production target saved.', target: saved });
+});
+
 export default router;

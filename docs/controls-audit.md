@@ -1,13 +1,13 @@
 # Interactive Controls & UI Audit Checklist (No Dead Controls)
 
-Generated on: 2026-09-29T17:50:38.844Z
+Generated on: 2026-09-30T05:33:52.193Z
 
 ## Summary Statistics
-- **Files Audited**: 30
-- **Buttons Verified**: 98
-- **Links & Navigation Routes Verified**: 29
-- **Forms & Submission Handlers Verified**: 20
-- **API Endpoint Calls Verified**: 88
+- **Files Audited**: 31
+- **Buttons Verified**: 119
+- **Links & Navigation Routes Verified**: 26
+- **Forms & Submission Handlers Verified**: 23
+- **API Endpoint Calls Verified**: 97
 - **Violations Found**: 0
 
 ## Verification Status
@@ -19,7 +19,7 @@ Generated on: 2026-09-29T17:50:38.844Z
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
 | Button | `navigate(-1)}           classN` | ✅ PASS |
-| Link | `/` | ✅ PASS |
+| Link | `/dashboard` | ✅ PASS |
 
 ### `client/src/auth-context.tsx`
 | Element Type | Label / Target | Status |
@@ -36,27 +36,26 @@ Generated on: 2026-09-29T17:50:38.844Z
 ### `client/src/components/Layout.tsx`
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
-| Button | `navigate('/notifications')}   ` | ✅ PASS |
 | Button | `setMenuOpen((v) => !v)}       ` | ✅ PASS |
+| Button | `navigate('/notifications')}   ` | ✅ PASS |
+| Button | `setProfileOpen((v) => !v)}    ` | ✅ PASS |
 | Button | `{signingOut ? 'Signing out…' :` | ✅ PASS |
-| Link | `/demo-guide` | ✅ PASS |
-| Link | `/` | ✅ PASS |
-| Link | `/redistribution` | ✅ PASS |
-| Link | `/ngos` | ✅ PASS |
-| Link | `/menu` | ✅ PASS |
-| Link | `/memory` | ✅ PASS |
-| Link | `/analytics` | ✅ PASS |
+| Button | `setMenuOpen(false)}           ` | ✅ PASS |
+| Button | `<span>🚪</span>               ` | ✅ PASS |
+| Link | `/settings` | ✅ PASS |
+| Link | `/settings` | ✅ PASS |
+| Link | `/settings` | ✅ PASS |
+| Link | `/dashboard` | ✅ PASS |
+| Link | `/food-distribution` | ✅ PASS |
+| Link | `/end-of-day-report` | ✅ PASS |
+| Link | `/waste-analysis` | ✅ PASS |
 | Link | `/reports` | ✅ PASS |
-| Link | `/food-data` | ✅ PASS |
+| Link | `/menu-management` | ✅ PASS |
+| Link | `/settings` | ✅ PASS |
+| Link | `/demo-guide` | ✅ PASS |
 | Link | `/flow` | ✅ PASS |
-| Link | `/notifications` | ✅ PASS |
-| Link | `/inventory` | ✅ PASS |
-| Link | `/eod` | ✅ PASS |
-| Link | `/waste` | ✅ PASS |
-| Link | `/eligibility` | ✅ PASS |
-| Link | `/imports` | ✅ PASS |
+| Link | `/memory` | ✅ PASS |
 | Link | `/audit` | ✅ PASS |
-| Link | `/organization` | ✅ PASS |
 | API Call | `/notifications/unread-count` | ✅ PASS |
 
 ### `client/src/pages/Analytics.tsx`
@@ -96,17 +95,32 @@ Generated on: 2026-09-29T17:50:38.844Z
 ### `client/src/pages/Dashboard.tsx`
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
-| Button | `{genBusy ? 'Generating…' : 'Ge` | ✅ PASS |
-| Button | `setWhy(t)} className="rounded-` | ✅ PASS |
-| Button | `{ setAdjId(adjId === t.id ? nu` | ✅ PASS |
-| Button | `void onAdjust(adjId)} disabled` | ✅ PASS |
-| Button | `{bufBusy ? 'Saving…' : 'Save b` | ✅ PASS |
+| Button | `{genBusy ? 'Generating…' : '⚡ ` | ✅ PASS |
+| Button | `{                 setTargetMod` | ✅ PASS |
+| Button | `{                 setRecordMod` | ✅ PASS |
+| Button | `setWhy(t)}                    ` | ✅ PASS |
+| Button | `{                             ` | ✅ PASS |
+| Button | `void onAdjust(adjId)}         ` | ✅ PASS |
+| Button | `{bufBusy ? 'Saving…' : 'Save B` | ✅ PASS |
+| Button | `setTargetModalOpen(false)}    ` | ✅ PASS |
+| Button | `setTargetModalOpen(false)}    ` | ✅ PASS |
+| Button | `{targetModalBusy ? 'Saving Tar` | ✅ PASS |
+| Button | `setRecordModalOpen(false)}    ` | ✅ PASS |
+| Button | `setRecordModalOpen(false)}    ` | ✅ PASS |
+| Button | `{recordModalBusy ? 'Saving Rec` | ✅ PASS |
 | Button | `Close (Esc)` | ✅ PASS |
+| Link | `/setup` | ✅ PASS |
+| Form | `form` | ✅ PASS |
+| Form | `form` | ✅ PASS |
+| API Call | `/food-items` | ✅ PASS |
 | API Call | `/dashboard/overview` | ✅ PASS |
 | API Call | `/flow/today` | ✅ PASS |
 | API Call | `/targets/generate` | ✅ PASS |
 | API Call | `/targets/buffer` | ✅ PASS |
 | API Call | `/targets/` | ✅ PASS |
+| API Call | `/food-items` | ✅ PASS |
+| API Call | `/targets/quick-target` | ✅ PASS |
+| API Call | `/food-records` | ✅ PASS |
 
 ### `client/src/pages/DigitalMemory.tsx`
 | Element Type | Label / Target | Status |
@@ -219,11 +233,12 @@ Generated on: 2026-09-29T17:50:38.844Z
 ### `client/src/pages/Login.tsx`
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
-| Button | `{busy ? 'Signing in…' : 'Log i` | ✅ PASS |
-| Link | `/signup` | ✅ PASS |
+| Button | `{busy ? (               <>    ` | ✅ PASS |
 | Link | `/forgot` | ✅ PASS |
+| Link | `/signup` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | API Call | `/auth/login` | ✅ PASS |
+| API Call | `/auth/me` | ✅ PASS |
 
 ### `client/src/pages/MenuPage.tsx`
 | Element Type | Label / Target | Status |
@@ -336,13 +351,32 @@ Generated on: 2026-09-29T17:50:38.844Z
 | API Call | `/impact/factors` | ✅ PASS |
 | API Call | `/impact/snapshots` | ✅ PASS |
 
+### `client/src/pages/SetupPage.tsx`
+| Element Type | Label / Target | Status |
+| --- | --- | --- |
+| Button | `{                       if (s ` | ✅ PASS |
+| Button | `+ Add Item` | ✅ PASS |
+| Button | `removeMenuItem(item.id)}      ` | ✅ PASS |
+| Button | `setHistoricalOption('UPLOAD')}` | ✅ PASS |
+| Button | `setHistoricalOption('MANUAL')}` | ✅ PASS |
+| Button | `+ Add Record Row` | ✅ PASS |
+| Button | `removeManualRow(r.id)}        ` | ✅ PASS |
+| Button | `← Back` | ✅ PASS |
+| Button | `Save &amp; Continue →` | ✅ PASS |
+| Button | `{busy ? (                     ` | ✅ PASS |
+| Form | `form` | ✅ PASS |
+| API Call | `/food-items` | ✅ PASS |
+| API Call | `/menus` | ✅ PASS |
+| API Call | `/food-records` | ✅ PASS |
+
 ### `client/src/pages/Signup.tsx`
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
-| Button | `{busy ? 'Creating…' : 'Sign up` | ✅ PASS |
+| Button | `{busy ? (               <>    ` | ✅ PASS |
 | Link | `/login` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | API Call | `/auth/signup` | ✅ PASS |
+| API Call | `/auth/login` | ✅ PASS |
 
 ### `client/src/pages/Waste.tsx`
 | Element Type | Label / Target | Status |

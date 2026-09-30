@@ -18,7 +18,7 @@ import {
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { Forgot, Reset } from './pages/AuthExtras';
-import { Onboarding } from './pages/Onboarding';
+import { SetupPage } from './pages/SetupPage';
 import { Dashboard } from './pages/Dashboard';
 import { OrganizationPage } from './pages/Organization';
 import { MenuPage } from './pages/MenuPage';
@@ -40,13 +40,13 @@ import { DemoGuide } from './pages/DemoGuide';
 
 function PublicShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-stone-200 bg-white">
+    <div className="min-h-screen bg-[#F5F7FA]">
+      <header className="border-b border-slate-200 bg-white shadow-xs">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-leaf-700 text-lg text-white" aria-hidden="true">♻</div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0B1F33] text-lg text-white" aria-hidden="true">🌱</div>
           <div>
-            <p className="text-base font-bold text-leaf-900">Surplus MealGuard AI</p>
-            <p className="text-xs text-stone-500">Smart Food Waste Prevention &amp; Redistribution (SIH Prototype)</p>
+            <p className="text-base font-bold text-[#0B1F33]">Surplus MealGuard AI</p>
+            <p className="text-xs text-slate-500">Smart Food Waste Prevention &amp; Redistribution</p>
           </div>
         </div>
       </header>
@@ -65,8 +65,8 @@ function NotFound() {
       <h1 className="text-xl font-bold text-stone-900">Page not found</h1>
       <p className="mt-2 text-sm text-stone-600">The requested page or resource could not be found.</p>
       <div className="mt-5 flex justify-center gap-3">
-        <Link to="/" className="rounded-lg bg-leaf-700 px-4 py-2 text-sm font-medium text-white hover:bg-leaf-800">
-          Go home
+        <Link to="/dashboard" className="rounded-lg bg-[#0B1F33] px-4 py-2 text-sm font-medium text-white hover:bg-[#1565C0]">
+          Go to Dashboard
         </Link>
         <button
           type="button"
@@ -86,16 +86,39 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            {/* PUBLIC / AUTH PAGES */}
             <Route path="/login" element={<PublicShell><PublicOnly><Login /></PublicOnly></PublicShell>} />
             <Route path="/signup" element={<PublicShell><PublicOnly><Signup /></PublicOnly></PublicShell>} />
             <Route path="/forgot" element={<PublicShell><Forgot /></PublicShell>} />
+            <Route path="/forgot-password" element={<PublicShell><Forgot /></PublicShell>} />
             <Route path="/reset" element={<PublicShell><Reset /></PublicShell>} />
+            <Route path="/reset-password" element={<PublicShell><Reset /></PublicShell>} />
             <Route path="/verify" element={<Navigate to="/login" replace />} />
+
+            {/* ONBOARDING PAGE - COMPLETELY SEPARATE (NO LAYOUT, NO SIDEBAR, NO SHELL) */}
             <Route
-              path="/onboarding"
+              path="/setup"
+              element={
+                <RequireAuth>
+                  <RequireNoOrg>
+                    <SetupPage />
+                  </RequireNoOrg>
+                </RequireAuth>
+              }
+            />
+            {/* Redirect legacy /onboarding to /setup */}
+            <Route path="/onboarding" element={<Navigate to="/setup" replace />} />
+
+            {/* APPLICATION PAGES */}
+            <Route
+              path="/dashboard"
               element={
                 <Layout>
-                  <RequireNoOrg><Onboarding /></RequireNoOrg>
+                  <RequireAuth>
+                    <RequireOnboarded>
+                      <Dashboard />
+                    </RequireOnboarded>
+                  </RequireAuth>
                 </Layout>
               }
             />
@@ -111,12 +134,128 @@ export default function App() {
                 </Layout>
               }
             />
+
             <Route
-              path="/demo-guide"
+              path="/food-distribution"
               element={
                 <Layout>
                   <RequireAuth>
-                    <DemoGuide />
+                    <RequireRedistributionAccess>
+                      <Redistribution />
+                    </RequireRedistributionAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+            <Route
+              path="/redistribution"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireRedistributionAccess>
+                      <Redistribution />
+                    </RequireRedistributionAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+
+            <Route
+              path="/end-of-day-report"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireFoodDataAccess>
+                      <EndOfDay />
+                    </RequireFoodDataAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+            <Route
+              path="/eod"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireFoodDataAccess>
+                      <EndOfDay />
+                    </RequireFoodDataAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+
+            <Route
+              path="/waste-analysis"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireFoodDataAccess>
+                      <Waste />
+                    </RequireFoodDataAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+            <Route
+              path="/waste"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireFoodDataAccess>
+                      <Waste />
+                    </RequireFoodDataAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+
+            <Route
+              path="/reports"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireFoodDataAccess>
+                      <Reports />
+                    </RequireFoodDataAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+
+            <Route
+              path="/menu-management"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireMenuAccess>
+                      <MenuPage />
+                    </RequireMenuAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+            <Route
+              path="/menu"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireMenuAccess>
+                      <MenuPage />
+                    </RequireMenuAccess>
+                  </RequireAuth>
+                </Layout>
+              }
+            />
+
+            <Route
+              path="/settings"
+              element={
+                <Layout>
+                  <RequireAuth>
+                    <RequireOnboarded>
+                      <OrganizationPage />
+                    </RequireOnboarded>
                   </RequireAuth>
                 </Layout>
               }
@@ -133,14 +272,14 @@ export default function App() {
                 </Layout>
               }
             />
+
+            {/* ADDITIONAL INSTITUTION WORKSPACE PAGES */}
             <Route
-              path="/menu"
+              path="/demo-guide"
               element={
                 <Layout>
                   <RequireAuth>
-                    <RequireMenuAccess>
-                      <MenuPage />
-                    </RequireMenuAccess>
+                    <DemoGuide />
                   </RequireAuth>
                 </Layout>
               }
@@ -194,18 +333,6 @@ export default function App() {
               }
             />
             <Route
-              path="/reports"
-              element={
-                <Layout>
-                  <RequireAuth>
-                    <RequireFoodDataAccess>
-                      <Reports />
-                    </RequireFoodDataAccess>
-                  </RequireAuth>
-                </Layout>
-              }
-            />
-            <Route
               path="/flow"
               element={
                 <Layout>
@@ -242,30 +369,6 @@ export default function App() {
               }
             />
             <Route
-              path="/eod"
-              element={
-                <Layout>
-                  <RequireAuth>
-                    <RequireFoodDataAccess>
-                      <EndOfDay />
-                    </RequireFoodDataAccess>
-                  </RequireAuth>
-                </Layout>
-              }
-            />
-            <Route
-              path="/waste"
-              element={
-                <Layout>
-                  <RequireAuth>
-                    <RequireFoodDataAccess>
-                      <Waste />
-                    </RequireFoodDataAccess>
-                  </RequireAuth>
-                </Layout>
-              }
-            />
-            <Route
               path="/eligibility"
               element={
                 <Layout>
@@ -273,18 +376,6 @@ export default function App() {
                     <RequireFoodDataAccess>
                       <Eligibility />
                     </RequireFoodDataAccess>
-                  </RequireAuth>
-                </Layout>
-              }
-            />
-            <Route
-              path="/redistribution"
-              element={
-                <Layout>
-                  <RequireAuth>
-                    <RequireRedistributionAccess>
-                      <Redistribution />
-                    </RequireRedistributionAccess>
                   </RequireAuth>
                 </Layout>
               }
@@ -313,6 +404,7 @@ export default function App() {
                 </Layout>
               }
             />
+
             <Route path="*" element={<PublicShell><NotFound /></PublicShell>} />
           </Routes>
         </AuthProvider>

@@ -14,7 +14,7 @@ export function RequireOnboarded({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <p className="rounded-xl bg-white p-6 text-sm" role="status">Loading…</p>;
   if (!user) return <Navigate to="/login" replace />;
-  if (!user.organizationId) return <Navigate to="/onboarding" replace />;
+  if (!user.organizationId) return <Navigate to="/setup" replace />;
   return <>{children}</>;
 }
 
@@ -22,7 +22,7 @@ export function RequireNoOrg({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <p className="rounded-xl bg-white p-6 text-sm" role="status">Loading…</p>;
   if (!user) return <Navigate to="/login" replace />;
-  if (user.organizationId) return <Navigate to="/" replace />;
+  if (user.organizationId) return <Navigate to="/dashboard" replace />;
   const allowed = ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'];
   if (!allowed.includes(user.role)) {
     return (
@@ -42,9 +42,9 @@ export function PublicOnly({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <p className="rounded-xl bg-white p-6 text-sm" role="status">Loading…</p>;
   if (user) {
-    if (user.organizationId) return <Navigate to="/" replace />;
+    if (user.organizationId) return <Navigate to="/dashboard" replace />;
     if (user.role === 'NGO' && user.ngoOrganizationId) return <Navigate to="/redistribution" replace />;
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to="/setup" replace />;
   }
   return <>{children}</>;
 }
@@ -70,7 +70,7 @@ function RequireRoles({ roles, what, children }: { roles: string[]; what: string
   const { user, loading } = useAuth();
   if (loading) return <p className="rounded-xl bg-white p-6 text-sm" role="status">Loading…</p>;
   if (!user) return <Navigate to="/login" replace />;
-  if (!user.organizationId) return <Navigate to="/onboarding" replace />;
+  if (!user.organizationId) return <Navigate to="/setup" replace />;
   if (!roles.includes(user.role)) return <Blocked role={user.role} what={what} />;
   return <>{children}</>;
 }
@@ -99,7 +99,7 @@ export function RequireRedistributionAccess({ children }: { children: ReactNode 
     if (!user.ngoOrganizationId) return <Blocked role={user.role} what="view redistribution (NGO account is not linked to a registered NGO)" />;
     return <>{children}</>;
   }
-  if (!user.organizationId) return <Navigate to="/onboarding" replace />;
+  if (!user.organizationId) return <Navigate to="/setup" replace />;
   if (!MENU_ROLES.includes(user.role)) return <Blocked role={user.role} what="view redistribution" />;
   return <>{children}</>;
 }
