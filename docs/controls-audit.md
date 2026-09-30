@@ -1,11 +1,11 @@
 # Interactive Controls & UI Audit Checklist (No Dead Controls)
 
-Generated on: 2026-09-30T06:50:58.625Z
+Generated on: 2026-09-30T07:50:14.694Z
 
 ## Summary Statistics
 - **Files Audited**: 27
-- **Buttons Verified**: 110
-- **Links & Navigation Routes Verified**: 22
+- **Buttons Verified**: 113
+- **Links & Navigation Routes Verified**: 21
 - **Forms & Submission Handlers Verified**: 20
 - **API Endpoint Calls Verified**: 80
 - **Violations Found**: 0
@@ -37,11 +37,10 @@ Generated on: 2026-09-30T06:50:58.625Z
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
 | Button | `setMenuOpen((v) => !v)}       ` | ✅ PASS |
-| Button | `navigate('/notifications')}   ` | ✅ PASS |
-| Button | `setProfileOpen((v) => !v)}    ` | ✅ PASS |
+| Button | `{                 if (showNoti` | ✅ PASS |
 | Button | `{signingOut ? 'Signing out…' :` | ✅ PASS |
 | Button | `setMenuOpen(false)}           ` | ✅ PASS |
-| Button | `<span>🚪</span>               ` | ✅ PASS |
+| Button | `<svg className="w-5 h-5 text-[` | ✅ PASS |
 | Link | `/settings` | ✅ PASS |
 | Link | `/settings` | ✅ PASS |
 | Link | `/settings` | ✅ PASS |
@@ -81,9 +80,13 @@ Generated on: 2026-09-30T06:50:58.625Z
 ### `client/src/pages/Dashboard.tsx`
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
-| Button | `{genBusy ? 'Generating…' : '⚡ ` | ✅ PASS |
+| Button | `<span>⚡</span>               <` | ✅ PASS |
+| Button | `{                 if (rows.len` | ✅ PASS |
 | Button | `{                 setTargetMod` | ✅ PASS |
 | Button | `{                 setRecordMod` | ✅ PASS |
+| Button | `{                   scrollToSe` | ✅ PASS |
+| Button | `{                   setImpactP` | ✅ PASS |
+| Button | `{               scrollToSectio` | ✅ PASS |
 | Button | `setWhy(t)}                    ` | ✅ PASS |
 | Button | `{                             ` | ✅ PASS |
 | Button | `void onAdjust(adjId)}         ` | ✅ PASS |
@@ -124,11 +127,10 @@ Generated on: 2026-09-30T06:50:58.625Z
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
 | Button | `{loading ? 'Loading…' : 'Revie` | ✅ PASS |
-| Button | `{busy ? 'Closing…' : 'Close da` | ✅ PASS |
+| Button | `{busy ? 'Closing…' : 'Close Da` | ✅ PASS |
 | Button | `{ setReopenFor(true); setReope` | ✅ PASS |
 | Button | `{reopenBusy ? 'Reopening…' : '` | ✅ PASS |
 | Button | `setReopenFor(false)} className` | ✅ PASS |
-| Link | `/food-data` | ✅ PASS |
 | API Call | `/eod/reports` | ✅ PASS |
 | API Call | `/eod/preview` | ✅ PASS |
 | API Call | `/eod/close` | ✅ PASS |
@@ -202,7 +204,7 @@ Generated on: 2026-09-30T06:50:58.625Z
 | Button | `setConfirm(null)} disabled={cB` | ✅ PASS |
 | Button | `{ resetFoodForm(); setShowForm` | ✅ PASS |
 | Button | `{fBusy ? 'Saving…' : editingId` | ✅ PASS |
-| Button | `startEdit(i)} className="round` | ✅ PASS |
+| Button | `startEdit(i)} className={ghost` | ✅ PASS |
 | Button | `setConfirm({ action: 'archive'` | ✅ PASS |
 | Button | `setConfirm({ action: 'restore'` | ✅ PASS |
 | Button | `setConfirm({ action: 'delete',` | ✅ PASS |
@@ -210,7 +212,7 @@ Generated on: 2026-09-30T06:50:58.625Z
 | Button | `setMLines((ls) => ls.filter((_` | ✅ PASS |
 | Button | `setMLines((ls) => [...ls, { fo` | ✅ PASS |
 | Button | `{mBusy ? 'Saving…' : mEditing ` | ✅ PASS |
-| Button | `startMenuEdit(m)} className="r` | ✅ PASS |
+| Button | `startMenuEdit(m)} className={g` | ✅ PASS |
 | Button | `setConfirm({ action: 'deleteMe` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | Form | `form` | ✅ PASS |
@@ -260,8 +262,8 @@ Generated on: 2026-09-30T06:50:58.625Z
 ### `client/src/pages/Organization.tsx`
 | Element Type | Label / Target | Status |
 | --- | --- | --- |
-| Button | `{busy ? 'Saving…' : 'Save chan` | ✅ PASS |
-| Button | `{kBusy ? 'Adding…' : 'Add unit` | ✅ PASS |
+| Button | `{busy ? 'Saving…' : 'Save Chan` | ✅ PASS |
+| Button | `{kBusy ? 'Adding…' : 'Add Kitc` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | API Call | `/organizations/mine` | ✅ PASS |
@@ -297,7 +299,7 @@ Generated on: 2026-09-30T06:50:58.625Z
 | Button | `void loadReport()} disabled={l` | ✅ PASS |
 | Button | `void download(ext)} disabled={` | ✅ PASS |
 | Button | `void saveSnapshot()} disabled=` | ✅ PASS |
-| Button | `{fBusy ? 'Saving…' : 'Save fac` | ✅ PASS |
+| Button | `{fBusy ? 'Saving…' : 'Save Fac` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | API Call | `/food-items` | ✅ PASS |
 | API Call | `/impact/factors` | ✅ PASS |

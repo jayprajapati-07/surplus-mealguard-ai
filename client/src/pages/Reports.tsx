@@ -27,8 +27,8 @@ interface Snapshot {
 }
 
 const MANAGE = ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'];
-const input = 'mt-1 w-full rounded-lg border border-stone-300 px-3 py-2';
-const card = 'rounded-2xl border border-stone-200 bg-white p-6 shadow-sm';
+const input = 'mt-1 w-full rounded-xl border border-[#E3ECE6] px-3.5 py-2 text-xs sm:text-sm bg-white text-[#0C2741] focus:ring-1 focus:ring-[#006B48]';
+const card = 'rounded-2xl border border-[#E3ECE6] bg-white p-5 md:p-6 shadow-sm';
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 async function authedGet(path: string): Promise<Response> {
@@ -107,6 +107,7 @@ export function Reports() {
     try {
       const d = await api<{ report: ReportData }>(`/reports/data?${params()}`);
       setReport(d.report);
+      if (window.showToast) window.showToast('Report generated successfully');
     } catch (err) {
       setReport(null);
       setError(err instanceof Error ? err.message : 'Could not build report.');
@@ -136,6 +137,7 @@ export function Reports() {
       a.remove();
       URL.revokeObjectURL(url);
       setMsg(`${ext.toUpperCase()} downloaded with the currently displayed data. The export was audited.`);
+      if (window.showToast) window.showToast(`${ext.toUpperCase()} exported successfully!`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed.');
     } finally {
@@ -155,6 +157,7 @@ export function Reports() {
           category: fCategory.trim() || undefined, foodItemId: fFood || undefined }) });
       setMsg(d.message);
       setFKey(''); setFName(''); setFValue(''); setFUnit(''); setFSource(''); setFCategory(''); setFFood('');
+      if (window.showToast) window.showToast('Impact factor saved');
       await loadFactors();
     } catch (err) {
       setFError(err instanceof Error ? err.message : 'Save failed.');
@@ -177,6 +180,7 @@ export function Reports() {
           ...(kitchen ? { kitchenUnitId: kitchen } : {}),
           ...(meal ? { mealType: meal } : {}), ...(food ? { foodItemId: food } : {}) }) });
       setMsg(d.message);
+      if (window.showToast) window.showToast('Impact snapshot persisted');
       await loadSnapshots();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Snapshot failed.');
@@ -186,117 +190,166 @@ export function Reports() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 animate-fadeInUpStagger">
       <div className={card}>
-        <h1 className="text-xl font-bold text-leaf-900">Reports</h1>
-        <p className="mt-1 text-sm text-stone-600">Daily, weekly, monthly, and ESG/sustainability reports from live data. Exports contain exactly what is displayed — nothing placeholder.</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <div><label htmlFor="rp-type" className="text-sm font-medium">Type</label>
+        <h1 className="text-xl font-bold text-[#0C2741]">Operational &amp; ESG Reports</h1>
+        <p className="mt-1 text-xs sm:text-sm text-gray-500">
+          Daily, weekly, monthly, and ESG/sustainability reports from live data. Exports contain exactly what is displayed — audited and verified.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div>
+            <label htmlFor="rp-type" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Type</label>
             <select id="rp-type" value={type} onChange={(e) => setType(e.target.value)} className={input}>
               <option value="daily">Daily</option><option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option><option value="esg">ESG / sustainability</option>
-            </select></div>
-          <div><label htmlFor="rp-date" className="text-sm font-medium">Anchor date</label>
-            <input id="rp-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className={input} /></div>
-          <div><label htmlFor="rp-kitchen" className="text-sm font-medium">Kitchen</label>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="rp-date" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Anchor date</label>
+            <input id="rp-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className={input} />
+          </div>
+          <div>
+            <label htmlFor="rp-kitchen" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Kitchen</label>
             <select id="rp-kitchen" value={kitchen} onChange={(e) => setKitchen(e.target.value)} className={input}>
               <option value="">All kitchens</option>{kitchens.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
-            </select></div>
-          <div><label htmlFor="rp-meal" className="text-sm font-medium">Meal</label>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="rp-meal" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Meal</label>
             <select id="rp-meal" value={meal} onChange={(e) => setMeal(e.target.value)} className={input}>
               <option value="">All meals</option><option value="BREAKFAST">Breakfast</option><option value="LUNCH">Lunch</option><option value="DINNER">Dinner</option>
-            </select></div>
-          <div><label htmlFor="rp-food" className="text-sm font-medium">Food</label>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="rp-food" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Food</label>
             <select id="rp-food" value={food} onChange={(e) => setFood(e.target.value)} className={input}>
               <option value="">All items</option>{foods.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select></div>
-          <div className="flex items-end"><button onClick={() => void loadReport()} disabled={loading} className="rounded-lg bg-leaf-700 px-4 py-2 text-sm font-medium text-white hover:bg-leaf-800 disabled:opacity-60">{loading ? 'Building…' : 'Build report'}</button></div>
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button onClick={() => void loadReport()} disabled={loading} className="w-full rounded-xl bg-[#006B48] px-4 py-2 text-xs sm:text-sm font-bold text-white shadow-sm hover:bg-[#004C35] active:scale-95 disabled:opacity-60 transition-all cursor-pointer">
+              {loading ? 'Building…' : 'Build Report'}
+            </button>
+          </div>
         </div>
-        {error && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p>}
-        {msg && <p className="mt-3 rounded-lg bg-leaf-100 p-3 text-sm text-leaf-900" role="status">{msg}</p>}
+        {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs sm:text-sm font-semibold text-red-800 border border-red-200" role="alert">{error}</p>}
+        {msg && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs sm:text-sm font-semibold text-emerald-900 border border-emerald-200" role="status">{msg}</p>}
       </div>
 
       {report && (
         <div className={card}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-bold">{report.type.toUpperCase()} report · {report.from} to {report.to}</h2>
-            <div className="flex gap-2 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E3ECE6] pb-3">
+            <h2 className="text-base font-bold text-[#0C2741]">{report.type.toUpperCase()} report · {report.from} to {report.to}</h2>
+            <div className="flex gap-2 text-xs">
               {(['csv', 'xlsx', 'pdf'] as const).map((ext) => (
                 <button key={ext} onClick={() => void download(ext)} disabled={dlBusy !== ''}
-                  className="rounded-lg border border-stone-300 px-3 py-1.5 font-medium hover:bg-stone-100 disabled:opacity-60">
-                  {dlBusy === ext ? 'Preparing…' : `Download ${ext.toUpperCase()}`}
+                  className="rounded-xl border border-[#E3ECE6] bg-white px-3.5 py-1.5 font-bold text-[#0C2741] hover:bg-[#F2F7F4] active:scale-95 disabled:opacity-60 transition-all cursor-pointer">
+                  {dlBusy === ext ? 'Exporting…' : `Download ${ext.toUpperCase()}`}
                 </button>
               ))}
             </div>
           </div>
-          <dl className="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-            <div className="rounded bg-stone-50 p-2"><dt>Target / actual</dt><dd className="font-bold">{report.production.targetTotal} / {report.production.actualTotal} kg</dd></div>
-            <div className="rounded bg-stone-50 p-2"><dt>Sold (util.)</dt><dd className="font-bold">{report.sales.soldKg} kg ({report.sales.utilizationPct ?? 'n/a'}%)</dd></div>
-            <div className="rounded bg-stone-50 p-2"><dt>Waste</dt><dd className="font-bold">{report.waste.totalKg} kg</dd></div>
-            <div className="rounded bg-stone-50 p-2" title="Operational estimate: food saved from disposal via prevention and redistribution"><dt>Food saved</dt><dd className="font-bold">{report.sustainability.foodSavedKg} kg</dd></div>
-            <div className="rounded bg-stone-50 p-2" title="Configured cost savings estimate (INR per kg food rescued)"><dt>Cost saved (est.)</dt><dd className="font-bold">INR {report.sustainability.costSavedEstimate}</dd></div>
-            <div className="rounded bg-stone-50 p-2" title="Configured emissions estimate (kg CO2e avoided per kg food rescued)"><dt>CO2e avoided (est.)</dt><dd className="font-bold">{report.sustainability.co2AvoidedKgEstimate} kgCO2e</dd></div>
-            <div className="rounded bg-stone-50 p-2"><dt>Redistributed</dt><dd className="font-bold">{report.surplus.redistributedKg} kg</dd></div>
-            <div className="rounded bg-stone-50 p-2"><dt>Forecast error</dt><dd className="font-bold">{report.ai.meanAbsPctErr ?? 'n/a'}{report.ai.meanAbsPctErr !== null ? '%' : ''}</dd></div>
+          <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:text-sm sm:grid-cols-4">
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3"><dt className="text-gray-500 font-medium">Target / actual</dt><dd className="font-bold text-[#0C2741] mt-1">{report.production.targetTotal} / {report.production.actualTotal} kg</dd></div>
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3"><dt className="text-gray-500 font-medium">Sold (util.)</dt><dd className="font-bold text-[#0C2741] mt-1">{report.sales.soldKg} kg ({report.sales.utilizationPct ?? 'n/a'}%)</dd></div>
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3"><dt className="text-gray-500 font-medium">Waste</dt><dd className="font-bold text-red-700 mt-1">{report.waste.totalKg} kg</dd></div>
+            <div className="rounded-xl bg-[#ECFDF5] border border-emerald-200 p-3" title="Operational estimate: food saved from disposal via prevention and redistribution"><dt className="text-emerald-800 font-medium">Food saved</dt><dd className="font-bold text-[#006B48] mt-1">{report.sustainability.foodSavedKg} kg</dd></div>
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3" title="Configured cost savings estimate (INR per kg food rescued)"><dt className="text-gray-500 font-medium">Cost saved (est.)</dt><dd className="font-bold text-[#0C2741] mt-1">₹ {report.sustainability.costSavedEstimate.toLocaleString()}</dd></div>
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3" title="Configured emissions estimate (kg CO2e avoided per kg food rescued)"><dt className="text-gray-500 font-medium">CO2e avoided (est.)</dt><dd className="font-bold text-[#006B48] mt-1">{report.sustainability.co2AvoidedKgEstimate} kgCO2e</dd></div>
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3"><dt className="text-gray-500 font-medium">Redistributed</dt><dd className="font-bold text-[#D97706] mt-1">{report.surplus.redistributedKg} kg</dd></div>
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3"><dt className="text-gray-500 font-medium">Forecast error</dt><dd className="font-bold text-[#0C2741] mt-1">{report.ai.meanAbsPctErr ?? 'n/a'}{report.ai.meanAbsPctErr !== null ? '%' : ''}</dd></div>
           </dl>
-          <details className="mt-2 text-sm"><summary className="cursor-pointer font-medium text-leaf-800">Methodology &amp; how calculated</summary>
-            <ul className="mt-1 list-disc pl-5 text-stone-700">
+          <details className="mt-3 text-xs"><summary className="cursor-pointer font-bold text-[#006B48] hover:underline">Methodology &amp; how calculated</summary>
+            <ul className="mt-2 list-disc pl-5 text-gray-600 space-y-1">
               {report.sustainability.howCalculated.map((h, i) => <li key={i}>{h}</li>)}
               <li>{report.ai.accuracyDefinition}</li>
               <li>Cost and CO2e figures are estimates derived from configured factors, not measurements. No guaranteed reductions are claimed.</li>
             </ul>
           </details>
-          {canManage && <button onClick={() => void saveSnapshot()} disabled={sBusy} className="mt-3 rounded-lg bg-leaf-700 px-4 py-2 text-sm font-medium text-white hover:bg-leaf-800 disabled:opacity-60">{sBusy ? 'Saving…' : 'Persist as impact snapshot'}</button>}
+          {canManage && <button onClick={() => void saveSnapshot()} disabled={sBusy} className="mt-4 rounded-xl bg-[#006B48] px-4 py-2 text-xs font-bold text-white shadow hover:bg-[#004C35] active:scale-95 disabled:opacity-60 transition-all cursor-pointer">{sBusy ? 'Saving…' : 'Persist as Impact Snapshot'}</button>}
         </div>
       )}
 
       <div className={card}>
-        <h2 className="font-bold">Impact factors</h2>
-        <p className="mt-1 text-sm text-stone-600">Every factor needs a name, value, unit, source, effective date, and active status. Resolution: food item → category → organization → global. No unexplained hardcoded numbers.</p>
-        {factors.length === 0 ? <p className="mt-2 text-sm text-stone-600">None configured.</p> : (
-          <table className="mt-2 w-full text-sm">
-            <thead><tr className="text-left text-stone-500"><th>Key</th><th>Name</th><th>Value</th><th>Scope</th><th>Source</th><th>Active</th></tr></thead>
-            <tbody>{factors.map((f) => (
-              <tr key={f.id} className="border-t border-stone-100">
-                <td className="font-mono text-xs">{f.key}</td><td>{f.name}</td><td>{f.value} {f.unit}</td>
-                <td>{f.foodItemId ? `food:${f.foodItemId.slice(-6)}` : f.category ? `cat:${f.category}` : f.organizationId ? 'org' : 'global'}</td>
-                <td>{f.source ?? '—'}</td><td>{f.isActive ? 'yes' : 'no'}</td>
-              </tr>))}</tbody>
-          </table>
+        <h2 className="text-base font-bold text-[#0C2741]">Impact Factors</h2>
+        <p className="mt-1 text-xs sm:text-sm text-gray-500">Every factor needs a name, value, unit, source, effective date, and active status. Resolution: food item → category → organization → global. No unexplained hardcoded numbers.</p>
+        {factors.length === 0 ? <p className="mt-2 text-xs sm:text-sm text-gray-500">None configured.</p> : (
+          <div className="mt-3 overflow-x-auto custom-scrollbar">
+            <table className="w-full text-xs sm:text-sm min-w-[600px]">
+              <thead className="bg-[#F9FCFA] text-[#0C2741] font-semibold border-b border-[#E3ECE6]">
+                <tr className="text-left">
+                  <th className="py-2.5 px-3">Key</th>
+                  <th className="py-2.5 px-3">Name</th>
+                  <th className="py-2.5 px-3">Value</th>
+                  <th className="py-2.5 px-3">Scope</th>
+                  <th className="py-2.5 px-3">Source</th>
+                  <th className="py-2.5 px-3">Active</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E3ECE6]">
+                {factors.map((f) => (
+                  <tr key={f.id} className="hover:bg-[#F9FCFA] transition-colors">
+                    <td className="py-2 px-3 font-mono text-xs text-[#006B48] font-bold">{f.key}</td>
+                    <td className="py-2 px-3 font-medium text-[#0C2741]">{f.name}</td>
+                    <td className="py-2 px-3 font-semibold text-[#0C2741]">{f.value} {f.unit}</td>
+                    <td className="py-2 px-3 text-gray-600">{f.foodItemId ? `food:${f.foodItemId.slice(-6)}` : f.category ? `cat:${f.category}` : f.organizationId ? 'org' : 'global'}</td>
+                    <td className="py-2 px-3 text-gray-600">{f.source ?? '—'}</td>
+                    <td className="py-2 px-3">{f.isActive ? <span className="text-[#059669] font-bold">yes</span> : <span className="text-gray-400">no</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {canManage ? (
-          <form onSubmit={saveFactor} className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-            <div><label htmlFor="fx-key" className="font-medium">Key</label><input id="fx-key" value={fKey} onChange={(e) => setFKey(e.target.value)} required className={input} placeholder="COST_PER_KG_FOOD" /></div>
-            <div><label htmlFor="fx-name" className="font-medium">Name</label><input id="fx-name" value={fName} onChange={(e) => setFName(e.target.value)} required className={input} /></div>
-            <div><label htmlFor="fx-value" className="font-medium">Value</label><input id="fx-value" type="number" min={0} step="any" value={fValue} onChange={(e) => setFValue(e.target.value)} required className={input} /></div>
-            <div><label htmlFor="fx-unit" className="font-medium">Unit</label><input id="fx-unit" value={fUnit} onChange={(e) => setFUnit(e.target.value)} required className={input} placeholder="INR/kg" /></div>
-            <div><label htmlFor="fx-source" className="font-medium">Source (required)</label><input id="fx-source" value={fSource} onChange={(e) => setFSource(e.target.value)} required className={input} /></div>
-            <div><label htmlFor="fx-date" className="font-medium">Effective date</label><input id="fx-date" type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} required className={input} /></div>
-            <div><label htmlFor="fx-cat" className="font-medium">Category scope (optional)</label><input id="fx-cat" value={fCategory} onChange={(e) => setFCategory(e.target.value)} className={input} /></div>
-            <div><label htmlFor="fx-food" className="font-medium">Food item scope</label>
+          <form onSubmit={saveFactor} className="mt-4 grid gap-3 text-xs sm:text-sm sm:grid-cols-3 pt-3 border-t border-[#E3ECE6]">
+            <div><label htmlFor="fx-key" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Key</label><input id="fx-key" value={fKey} onChange={(e) => setFKey(e.target.value)} required className={input} placeholder="COST_PER_KG_FOOD" /></div>
+            <div><label htmlFor="fx-name" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Name</label><input id="fx-name" value={fName} onChange={(e) => setFName(e.target.value)} required className={input} /></div>
+            <div><label htmlFor="fx-value" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Value</label><input id="fx-value" type="number" min={0} step="any" value={fValue} onChange={(e) => setFValue(e.target.value)} required className={input} /></div>
+            <div><label htmlFor="fx-unit" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Unit</label><input id="fx-unit" value={fUnit} onChange={(e) => setFUnit(e.target.value)} required className={input} placeholder="INR/kg" /></div>
+            <div><label htmlFor="fx-source" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Source (required)</label><input id="fx-source" value={fSource} onChange={(e) => setFSource(e.target.value)} required className={input} /></div>
+            <div><label htmlFor="fx-date" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Effective date</label><input id="fx-date" type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} required className={input} /></div>
+            <div><label htmlFor="fx-cat" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Category scope (optional)</label><input id="fx-cat" value={fCategory} onChange={(e) => setFCategory(e.target.value)} className={input} /></div>
+            <div><label htmlFor="fx-food" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Food item scope</label>
               <select id="fx-food" value={fFood} onChange={(e) => setFFood(e.target.value)} className={input}>
                 <option value="">None (broader scope)</option>{foods.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select></div>
-            <div className="flex items-end"><button type="submit" disabled={fBusy} className="rounded-lg bg-leaf-700 px-4 py-2 font-medium text-white hover:bg-leaf-800 disabled:opacity-60">{fBusy ? 'Saving…' : 'Save factor'}</button></div>
-            {fError && <p className="rounded-lg bg-red-50 p-2 text-red-800 sm:col-span-3" role="alert">{fError}</p>}
+            <div className="flex items-end"><button type="submit" disabled={fBusy} className="w-full rounded-xl bg-[#006B48] px-4 py-2 font-bold text-white shadow hover:bg-[#004C35] active:scale-95 disabled:opacity-60 transition-all cursor-pointer">{fBusy ? 'Saving…' : 'Save Factor'}</button></div>
+            {fError && <p className="rounded-xl bg-red-50 p-2 text-red-800 sm:col-span-3 font-semibold" role="alert">{fError}</p>}
           </form>
         ) : (
-          <p className="mt-2 text-sm text-stone-600">Only admins / kitchen managers can manage factors.</p>
+          <p className="mt-2 text-xs sm:text-sm text-gray-500">Only admins / kitchen managers can manage factors.</p>
         )}
       </div>
 
       <div className={card}>
-        <h2 className="font-bold">Persisted impact snapshots ({snapshots.length})</h2>
-        <p className="mt-1 text-sm text-stone-600">Stored numbers make past reports reproducible — values plus the filters and method that produced them.</p>
-        {snapshots.length === 0 ? <p className="mt-2 text-sm text-stone-600">None yet. Build a report above, then persist it as a snapshot.</p> : (
-          <table className="mt-2 w-full text-sm">
-            <thead><tr className="text-left text-stone-500"><th>Date</th><th>Saved</th><th>Cost (est.)</th><th>CO2e (est.)</th><th>Detail</th></tr></thead>
-            <tbody>{snapshots.map((s) => (
-              <tr key={s.id} className="border-t border-stone-100">
-                <td>{s.date.slice(0, 10)}</td><td>{s.foodSavedKg} kg</td><td>INR {s.costSavedEstimate}</td><td>{s.co2AvoidedKgEstimate} kgCO2e</td>
-                <td className="max-w-xs truncate text-xs text-stone-500">{s.detail?.method ?? ''} {JSON.stringify(s.detail?.filters ?? {})}</td>
-              </tr>))}</tbody>
-          </table>
+        <h2 className="text-base font-bold text-[#0C2741]">Persisted Impact Snapshots ({snapshots.length})</h2>
+        <p className="mt-1 text-xs sm:text-sm text-gray-500">Stored numbers make past reports reproducible — values plus the filters and method that produced them.</p>
+        {snapshots.length === 0 ? <p className="mt-2 text-xs sm:text-sm text-gray-500">None yet. Build a report above, then persist it as a snapshot.</p> : (
+          <div className="mt-3 overflow-x-auto custom-scrollbar">
+            <table className="w-full text-xs sm:text-sm min-w-[600px]">
+              <thead className="bg-[#F9FCFA] text-[#0C2741] font-semibold border-b border-[#E3ECE6]">
+                <tr className="text-left">
+                  <th className="py-2.5 px-3">Date</th>
+                  <th className="py-2.5 px-3">Saved</th>
+                  <th className="py-2.5 px-3">Cost (est.)</th>
+                  <th className="py-2.5 px-3">CO2e (est.)</th>
+                  <th className="py-2.5 px-3">Detail</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E3ECE6]">
+                {snapshots.map((s) => (
+                  <tr key={s.id} className="hover:bg-[#F9FCFA] transition-colors">
+                    <td className="py-2 px-3 font-medium text-[#0C2741]">{s.date.slice(0, 10)}</td>
+                    <td className="py-2 px-3 font-bold text-[#006B48]">{s.foodSavedKg} kg</td>
+                    <td className="py-2 px-3 font-semibold text-[#0C2741]">₹ {s.costSavedEstimate.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-[#006B48]">{s.co2AvoidedKgEstimate} kgCO2e</td>
+                    <td className="py-2 px-3 max-w-xs truncate text-xs text-gray-500">{s.detail?.method ?? ''} {JSON.stringify(s.detail?.filters ?? {})}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

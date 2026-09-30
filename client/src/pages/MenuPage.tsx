@@ -36,7 +36,10 @@ interface Menu {
 }
 
 const MEALS = ['BREAKFAST', 'LUNCH', 'DINNER'] as const;
-const input = 'mt-1 w-full rounded-lg border border-stone-300 px-3 py-2';
+const input = 'mt-1 w-full rounded-xl border border-[#E3ECE6] px-3.5 py-2 text-xs sm:text-sm bg-white text-[#0C2741] focus:ring-1 focus:ring-[#006B48]';
+const card = 'rounded-2xl border border-[#E3ECE6] bg-white p-5 md:p-6 shadow-sm';
+const btnCls = 'rounded-xl bg-[#006B48] px-4 py-2 text-xs sm:text-sm font-bold text-white shadow-sm hover:bg-[#004C35] active:scale-95 disabled:opacity-60 transition-all cursor-pointer';
+const ghostCls = 'rounded-xl border border-[#E3ECE6] bg-white px-3 py-1.5 text-xs font-semibold text-[#0C2741] hover:bg-[#F2F7F4] active:scale-95 disabled:opacity-60 transition-all cursor-pointer';
 
 export function MenuPage() {
   const { user } = useAuth();
@@ -150,6 +153,7 @@ export function MenuPage() {
       }
       resetFoodForm();
       setShowForm(false);
+      if (window.showToast) window.showToast('Food item saved successfully');
       await load();
     } catch (err) {
       setFError(err instanceof Error ? err.message : 'Save failed.');
@@ -173,6 +177,7 @@ export function MenuPage() {
         setMsg(d.message);
       }
       setConfirm(null);
+      if (window.showToast) window.showToast('Action processed successfully');
       await load();
     } catch (err) {
       setMsg('');
@@ -239,6 +244,7 @@ export function MenuPage() {
       }
       resetMenuForm();
       setShowMenuForm(false);
+      if (window.showToast) window.showToast('Menu saved successfully');
       await load();
     } catch (err) {
       setMError(err instanceof Error ? err.message : 'Save failed.');
@@ -248,87 +254,90 @@ export function MenuPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-bold text-leaf-900">Menu &amp; food items</h1>
-        <p className="mt-1 text-sm text-stone-600">Saved food items are reused in menus and daily records. Quantities in kilograms (kg).</p>
-        {msg && <p className="mt-2 rounded-lg bg-leaf-100 p-3 text-sm text-leaf-900" role="status">{msg}</p>}
-        {error && <p className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p>}
+    <div className="space-y-5 animate-fadeInUpStagger">
+      <div className={card}>
+        <h1 className="text-xl font-bold text-[#0C2741]">Menu &amp; Food Catalog Management</h1>
+        <p className="mt-1 text-xs sm:text-sm text-gray-500">
+          Saved food items are reused in operational menus, target formulas, and daily records. All quantities standard in kg.
+        </p>
+        {msg && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs sm:text-sm font-semibold text-emerald-900 border border-emerald-200" role="status">{msg}</p>}
+        {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs sm:text-sm font-semibold text-red-800 border border-red-200" role="alert">{error}</p>}
       </div>
 
       {confirm && (
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4" role="alertdialog" aria-label="Confirm action">
-          <p className="text-sm font-bold">
+          <p className="text-xs sm:text-sm font-bold text-amber-900">
             {confirm.action === 'archive' && `Archive “${confirm.label}”? Past menus and records keep their history.`}
             {confirm.action === 'restore' && `Restore “${confirm.label}” to active items?`}
             {confirm.action === 'delete' && `Delete “${confirm.label}”? Only possible when unused; otherwise archive.`}
             {confirm.action === 'deleteMenu' && `Delete menu “${confirm.label}”? Its lines are removed too.`}
           </p>
-          <div className="mt-2 flex gap-2">
-            <button onClick={runConfirm} disabled={cBusy} className="rounded-lg bg-red-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60">
+          <div className="mt-3 flex gap-2">
+            <button onClick={runConfirm} disabled={cBusy} className="rounded-xl bg-red-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-800 active:scale-95 disabled:opacity-60 transition-all cursor-pointer">
               {cBusy ? 'Working…' : 'Confirm'}
             </button>
-            <button onClick={() => setConfirm(null)} disabled={cBusy} className="rounded-lg border border-stone-300 px-4 py-1.5 text-sm hover:bg-white">
+            <button onClick={() => setConfirm(null)} disabled={cBusy} className="rounded-xl border border-stone-300 bg-white px-4 py-1.5 text-xs font-semibold hover:bg-stone-50 transition-all cursor-pointer">
               Cancel
             </button>
           </div>
         </div>
       )}
 
-      <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-bold">Food items ({shown.length})</h2>
-          <div className="flex items-center gap-2 text-sm">
-            <label htmlFor="fi-filter">Show</label>
-            <select id="fi-filter" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)} className="rounded-lg border border-stone-300 px-2 py-1">
+      {/* Food items section */}
+      <div className={card}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E3ECE6] pb-3">
+          <h2 className="text-base font-bold text-[#0C2741]">Food Items Catalog ({shown.length})</h2>
+          <div className="flex items-center gap-2 text-xs sm:text-sm">
+            <label htmlFor="fi-filter" className="text-gray-500 font-medium">Show</label>
+            <select id="fi-filter" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)} className="rounded-xl border border-[#E3ECE6] px-3 py-1.5 bg-white text-[#0C2741]">
               <option value="active">Active</option>
               <option value="archived">Archived</option>
               <option value="all">All</option>
             </select>
             <button
               onClick={() => { resetFoodForm(); setShowForm((v) => !v); }}
-              className="rounded-lg bg-leaf-700 px-3 py-1.5 font-medium text-white hover:bg-leaf-800"
+              className={btnCls}
             >
-              {showForm ? 'Hide form' : '+ New food item'}
+              {showForm ? 'Hide form' : '+ New Food Item'}
             </button>
           </div>
         </div>
 
         {showForm && (
-          <form onSubmit={submitFood} className="mt-3 grid gap-3 rounded-xl bg-stone-50 p-4 sm:grid-cols-2" noValidate>
-            <div className="sm:col-span-2"><p className="text-sm font-bold">{editingId ? 'Edit food item' : 'New food item'}</p></div>
-            {fError && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-800 sm:col-span-2" role="alert">{fError}</p>}
-            <div><label htmlFor="fi-name" className="text-sm font-medium">Name (unique among active)</label><input id="fi-name" value={fName} onChange={(e) => setFName(e.target.value)} className={input} required /></div>
-            <div><label htmlFor="fi-cat" className="text-sm font-medium">Category</label><input id="fi-cat" value={fCat} onChange={(e) => setFCat(e.target.value)} className={input} placeholder="Grains, Pulses, Vegetables…" required /></div>
-            <div><label htmlFor="fi-meal" className="text-sm font-medium">Meal type</label>
+          <form onSubmit={submitFood} className="mt-4 grid gap-3 rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-4 sm:grid-cols-2 text-xs sm:text-sm" noValidate>
+            <div className="sm:col-span-2"><p className="font-bold text-[#0C2741]">{editingId ? 'Edit Food Item' : 'New Food Item'}</p></div>
+            {fError && <p className="rounded-xl bg-red-50 p-2 text-xs text-red-800 sm:col-span-2 font-bold" role="alert">{fError}</p>}
+            <div><label htmlFor="fi-name" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Name (unique among active)</label><input id="fi-name" value={fName} onChange={(e) => setFName(e.target.value)} className={input} required /></div>
+            <div><label htmlFor="fi-cat" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Category</label><input id="fi-cat" value={fCat} onChange={(e) => setFCat(e.target.value)} className={input} placeholder="Grains, Pulses, Vegetables…" required /></div>
+            <div><label htmlFor="fi-meal" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Meal type</label>
               <select id="fi-meal" value={fMeal} onChange={(e) => setFMeal(e.target.value)} className={input}>
                 <option value="ANY">Any</option><option value="BREAKFAST">Breakfast</option><option value="LUNCH">Lunch</option><option value="DINNER">Dinner</option>
               </select>
             </div>
-            <div><label htmlFor="fi-unit" className="text-sm font-medium">Unit</label><input id="fi-unit" value={fUnit} onChange={(e) => setFUnit(e.target.value)} className={input} /></div>
-            <div><label htmlFor="fi-portion" className="text-sm font-medium">Standard portion (kg, optional)</label><input id="fi-portion" type="number" min={0.001} step={0.01} value={fPortion} onChange={(e) => setFPortion(e.target.value)} className={input} /></div>
-            <div><label htmlFor="fi-price" className="text-sm font-medium">Selling price (reference only, optional)</label><input id="fi-price" type="number" min={0} step={0.5} value={fPrice} onChange={(e) => setFPrice(e.target.value)} className={input} /></div>
-            <div className="sm:col-span-2"><label htmlFor="fi-recipe" className="text-sm font-medium">Recipe / ingredients (optional)</label><textarea id="fi-recipe" value={fRecipe} onChange={(e) => setFRecipe(e.target.value)} className={input} rows={2} /></div>
-            <div className="sm:col-span-2"><button type="submit" disabled={fBusy} className="rounded-lg bg-leaf-700 px-4 py-2 text-sm font-medium text-white hover:bg-leaf-800 disabled:opacity-60">{fBusy ? 'Saving…' : editingId ? 'Save changes' : 'Create item'}</button></div>
+            <div><label htmlFor="fi-unit" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Unit</label><input id="fi-unit" value={fUnit} onChange={(e) => setFUnit(e.target.value)} className={input} /></div>
+            <div><label htmlFor="fi-portion" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Standard portion (kg, optional)</label><input id="fi-portion" type="number" min={0.001} step={0.01} value={fPortion} onChange={(e) => setFPortion(e.target.value)} className={input} /></div>
+            <div><label htmlFor="fi-price" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Selling price (reference only, optional)</label><input id="fi-price" type="number" min={0} step={0.5} value={fPrice} onChange={(e) => setFPrice(e.target.value)} className={input} /></div>
+            <div className="sm:col-span-2"><label htmlFor="fi-recipe" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Recipe / ingredients (optional)</label><textarea id="fi-recipe" value={fRecipe} onChange={(e) => setFRecipe(e.target.value)} className={input} rows={2} /></div>
+            <div className="sm:col-span-2"><button type="submit" disabled={fBusy} className={btnCls}>{fBusy ? 'Saving…' : editingId ? 'Save Changes' : 'Create Item'}</button></div>
           </form>
         )}
 
-        {loading ? <p className="mt-3 text-sm" role="status">Loading…</p> : shown.length === 0 ? (
-          <div className="mt-3 rounded-xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-600">No food items here yet. Create the first one above.</div>
+        {loading ? <p className="mt-4 text-xs sm:text-sm text-gray-500" role="status">Loading catalog…</p> : shown.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-[#E3ECE6] p-6 text-center text-xs sm:text-sm text-gray-500">No food items here yet. Create the first one above.</div>
         ) : (
-          <ul className="mt-3 space-y-2">
+          <ul className="mt-4 space-y-2">
             {shown.map((i) => (
-              <li key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200 p-3 text-sm">
+              <li key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#E3ECE6] p-3 text-xs sm:text-sm hover:border-[#006B48]/30 transition-all">
                 <div>
-                  <p className="font-bold">{i.name} {!i.isActive && <span className="ml-1 rounded bg-stone-200 px-1.5 py-0.5 text-xs">archived</span>}</p>
-                  <p className="text-stone-600">{i.category} · {i.mealType ?? 'Any'} · {i.unit}{i.standardPortionKg ? ` · portion ${i.standardPortionKg} kg` : ''}{i.sellingPrice != null ? ` · ₹${i.sellingPrice} (ref)` : ''}</p>
+                  <p className="font-bold text-[#0C2741]">{i.name} {!i.isActive && <span className="ml-1 rounded-full bg-stone-200 px-2 py-0.5 text-xs text-stone-700">archived</span>}</p>
+                  <p className="text-gray-500 mt-0.5">{i.category} · {i.mealType ?? 'Any'} · {i.unit}{i.standardPortionKg ? ` · portion ${i.standardPortionKg} kg` : ''}{i.sellingPrice != null ? ` · ₹${i.sellingPrice}` : ''}</p>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => startEdit(i)} className="rounded-md border border-stone-300 px-2 py-1 hover:bg-stone-100">Edit</button>
+                <div className="flex gap-1.5">
+                  <button onClick={() => startEdit(i)} className={ghostCls}>Edit</button>
                   {i.isActive
-                    ? <button onClick={() => setConfirm({ action: 'archive', id: i.id, label: i.name })} className="rounded-md border border-stone-300 px-2 py-1 hover:bg-stone-100">Archive</button>
-                    : <button onClick={() => setConfirm({ action: 'restore', id: i.id, label: i.name })} className="rounded-md border border-stone-300 px-2 py-1 hover:bg-stone-100">Restore</button>}
-                  <button onClick={() => setConfirm({ action: 'delete', id: i.id, label: i.name })} className="rounded-md border border-red-300 px-2 py-1 text-red-700 hover:bg-red-50">Delete</button>
+                    ? <button onClick={() => setConfirm({ action: 'archive', id: i.id, label: i.name })} className={ghostCls}>Archive</button>
+                    : <button onClick={() => setConfirm({ action: 'restore', id: i.id, label: i.name })} className={ghostCls}>Restore</button>}
+                  <button onClick={() => setConfirm({ action: 'delete', id: i.id, label: i.name })} className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 active:scale-95 transition-all cursor-pointer">Delete</button>
                 </div>
               </li>
             ))}
@@ -336,46 +345,47 @@ export function MenuPage() {
         )}
       </div>
 
-      <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-bold">Menus ({menus.length})</h2>
-          <button onClick={() => { resetMenuForm(); setShowMenuForm((v) => !v); }} className="rounded-lg bg-leaf-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-leaf-800">
-            {showMenuForm ? 'Hide builder' : '+ New menu'}
+      {/* Menus section */}
+      <div className={card}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E3ECE6] pb-3">
+          <h2 className="text-base font-bold text-[#0C2741]">Menus ({menus.length})</h2>
+          <button onClick={() => { resetMenuForm(); setShowMenuForm((v) => !v); }} className={btnCls}>
+            {showMenuForm ? 'Hide builder' : '+ New Menu'}
           </button>
         </div>
 
         {showMenuForm && (
-          <form onSubmit={submitMenu} className="mt-3 space-y-3 rounded-xl bg-stone-50 p-4" noValidate>
-            <p className="text-sm font-bold">{mEditing ? 'Edit menu' : 'New menu'}</p>
-            {mError && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-800" role="alert">{mError}</p>}
+          <form onSubmit={submitMenu} className="mt-4 space-y-3 rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-4 text-xs sm:text-sm" noValidate>
+            <p className="font-bold text-[#0C2741]">{mEditing ? 'Edit Menu' : 'New Menu'}</p>
+            {mError && <p className="rounded-xl bg-red-50 p-2 text-xs text-red-800 font-bold" role="alert">{mError}</p>}
             <div className="grid gap-3 sm:grid-cols-2">
-              <div><label htmlFor="mn-scope" className="text-sm font-medium">Scope</label>
+              <div><label htmlFor="mn-scope" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Scope</label>
                 <select id="mn-scope" value={mScope} onChange={(e) => setMScope(e.target.value as typeof mScope)} className={input}>
                   <option value="DAILY">Daily</option><option value="WEEKLY">Weekly</option>
                 </select>
               </div>
-              <div><label htmlFor="mn-date" className="text-sm font-medium">{mScope === 'WEEKLY' ? 'Week start' : 'Date'}</label><input id="mn-date" type="date" value={mDate} onChange={(e) => setMDate(e.target.value)} className={input} required /></div>
-              <div><label htmlFor="mn-meal" className="text-sm font-medium">Meal</label>
+              <div><label htmlFor="mn-date" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">{mScope === 'WEEKLY' ? 'Week start' : 'Date'}</label><input id="mn-date" type="date" value={mDate} onChange={(e) => setMDate(e.target.value)} className={input} required /></div>
+              <div><label htmlFor="mn-meal" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Meal</label>
                 <select id="mn-meal" value={mMeal} onChange={(e) => setMMeal(e.target.value as typeof mMeal)} className={input}>
                   {MEALS.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
-              <div><label htmlFor="mn-kit" className="text-sm font-medium">Kitchen (optional)</label>
+              <div><label htmlFor="mn-kit" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Kitchen (optional)</label>
                 <select id="mn-kit" value={mKitchen} onChange={(e) => setMKitchen(e.target.value)} className={input}>
                   <option value="">— Whole organization —</option>
                   {kitchens.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
                 </select>
               </div>
-              <div><label htmlFor="mn-title" className="text-sm font-medium">Title (optional)</label><input id="mn-title" value={mTitle} onChange={(e) => setMTitle(e.target.value)} className={input} /></div>
+              <div><label htmlFor="mn-title" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Title (optional)</label><input id="mn-title" value={mTitle} onChange={(e) => setMTitle(e.target.value)} className={input} /></div>
               <div className="flex items-end gap-4">
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={mSpecial} onChange={(e) => setMSpecial(e.target.checked)} /> Special menu</label>
-                {mSpecial && <div className="flex-1"><label htmlFor="mn-label" className="text-sm font-medium">Special label</label><input id="mn-label" value={mLabel} onChange={(e) => setMLabel(e.target.value)} className={input} placeholder="Festival special" /></div>}
+                <label className="flex items-center gap-2 text-xs font-semibold text-[#0C2741] cursor-pointer"><input type="checkbox" className="rounded text-[#006B48] focus:ring-[#006B48]" checked={mSpecial} onChange={(e) => setMSpecial(e.target.checked)} /> Special menu</label>
+                {mSpecial && <div className="flex-1"><label htmlFor="mn-label" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Special label</label><input id="mn-label" value={mLabel} onChange={(e) => setMLabel(e.target.value)} className={input} placeholder="Festival special" /></div>}
               </div>
             </div>
             <div>
-              <p className="text-sm font-medium">Lines (reuse saved food items)</p>
-              {activeItems.length === 0 && <p className="mt-1 text-sm text-amber-800">No active food items yet — create one above first.</p>}
-              <div className="mt-1 space-y-2">
+              <p className="text-xs font-bold text-[#0C2741] uppercase tracking-wider mt-2">Lines (reuse saved food items)</p>
+              {activeItems.length === 0 && <p className="mt-1 text-xs text-amber-800">No active food items yet — create one above first.</p>}
+              <div className="mt-2 space-y-2">
                 {mLines.map((l, idx) => (
                   <div key={idx} className="flex gap-2">
                     <select value={l.foodItemId} onChange={(e) => setMLines((ls) => ls.map((x, i) => (i === idx ? { ...x, foodItemId: e.target.value } : x)))} className={`${input} flex-1`} aria-label={`Menu line ${idx + 1} food item`}>
@@ -383,33 +393,33 @@ export function MenuPage() {
                       {activeItems.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
                     <input type="number" min={0.1} step={0.1} placeholder="kg" value={l.quantityKg} onChange={(e) => setMLines((ls) => ls.map((x, i) => (i === idx ? { ...x, quantityKg: e.target.value } : x)))} className={`${input} w-28`} aria-label={`Menu line ${idx + 1} quantity kg`} />
-                    {mLines.length > 1 && <button type="button" onClick={() => setMLines((ls) => ls.filter((_, i) => i !== idx))} className="text-sm text-red-700 underline" aria-label={`Remove line ${idx + 1}`}>Remove</button>}
+                    {mLines.length > 1 && <button type="button" onClick={() => setMLines((ls) => ls.filter((_, i) => i !== idx))} className="text-xs text-red-700 font-bold hover:underline" aria-label={`Remove line ${idx + 1}`}>Remove</button>}
                   </div>
                 ))}
               </div>
-              <button type="button" onClick={() => setMLines((ls) => [...ls, { foodItemId: '', quantityKg: '' }])} className="mt-2 rounded-lg border border-stone-300 px-3 py-1 text-sm hover:bg-white">+ Add line</button>
+              <button type="button" onClick={() => setMLines((ls) => [...ls, { foodItemId: '', quantityKg: '' }])} className={`${ghostCls} mt-2`}>+ Add line</button>
             </div>
-            <button type="submit" disabled={mBusy} className="rounded-lg bg-leaf-700 px-4 py-2 text-sm font-medium text-white hover:bg-leaf-800 disabled:opacity-60">{mBusy ? 'Saving…' : mEditing ? 'Save menu' : 'Create menu'}</button>
+            <button type="submit" disabled={mBusy} className={btnCls}>{mBusy ? 'Saving…' : mEditing ? 'Save Menu' : 'Create Menu'}</button>
           </form>
         )}
 
-        {menus.length === 0 && !loading ? <p className="mt-3 text-sm text-stone-600">No menus yet.</p> : (
-          <ul className="mt-3 space-y-2">
+        {menus.length === 0 && !loading ? <p className="mt-4 text-xs sm:text-sm text-gray-500">No menus yet.</p> : (
+          <ul className="mt-4 space-y-2.5">
             {menus.map((m) => (
-              <li key={m.id} className="rounded-xl border border-stone-200 p-3 text-sm">
+              <li key={m.id} className="rounded-xl border border-[#E3ECE6] p-3.5 text-xs sm:text-sm hover:border-[#006B48]/30 transition-all">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-bold">
+                  <p className="font-bold text-[#0C2741]">
                     {new Date(m.date).toLocaleDateString()} · {m.mealType} · {m.scope}
-                    {m.isSpecial && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">★ {m.specialLabel ?? 'Special'}</span>}
+                    {m.isSpecial && <span className="ml-2 rounded-full bg-[#FEF3C7] px-2.5 py-0.5 text-xs font-bold text-[#D97706]">★ {m.specialLabel ?? 'Special'}</span>}
                   </p>
-                  <div className="flex gap-2">
-                    <button onClick={() => startMenuEdit(m)} className="rounded-md border border-stone-300 px-2 py-1 hover:bg-stone-100">Edit</button>
-                    <button onClick={() => setConfirm({ action: 'deleteMenu', id: m.id, label: m.title ?? `${m.mealType} ${new Date(m.date).toLocaleDateString()}` })} className="rounded-md border border-red-300 px-2 py-1 text-red-700 hover:bg-red-50">Delete</button>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => startMenuEdit(m)} className={ghostCls}>Edit</button>
+                    <button onClick={() => setConfirm({ action: 'deleteMenu', id: m.id, label: m.title ?? `${m.mealType} ${new Date(m.date).toLocaleDateString()}` })} className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 active:scale-95 transition-all cursor-pointer">Delete</button>
                   </div>
                 </div>
-                {m.title && <p className="text-stone-600">{m.title}{m.kitchenUnit ? ` · ${m.kitchenUnit.name}` : ''}</p>}
-                <ul className="mt-1 list-disc pl-5 text-stone-700">
-                  {m.items.map((l) => <li key={l.id}>{l.foodItem?.name ?? l.name} — {l.quantityKg} kg</li>)}
+                {m.title && <p className="text-gray-500 mt-1">{m.title}{m.kitchenUnit ? ` · ${m.kitchenUnit.name}` : ''}</p>}
+                <ul className="mt-2 list-disc pl-5 text-gray-600 space-y-0.5">
+                  {m.items.map((l) => <li key={l.id}>{l.foodItem?.name ?? l.name} — <span className="font-semibold text-[#006B48]">{l.quantityKg} kg</span></li>)}
                 </ul>
               </li>
             ))}
