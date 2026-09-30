@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { useCallback, useEffect, useState, type FormEvent, type ChangeEvent } from 'react';
+import { api, API_BASE, getToken } from '../api';
 import { useAuth } from '../auth-context';
 
 interface FoodItem {
@@ -35,6 +35,32 @@ interface Menu {
   items: MenuLine[];
 }
 
+interface ImportJob {
+  id: string;
+  fileName: string;
+  status: string;
+  totalRows: number | null;
+  successRows: number | null;
+  errorRows: number | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+interface DailyRecord {
+  id: string;
+  date: string;
+  mealType: string;
+  preparedKg: number;
+  servedKg: number;
+  soldKg: number | null;
+  wasteKg: number;
+  remainingKg: number | null;
+  targetKg: number | null;
+  foodItemId: string | null;
+  foodItem?: { id: string; name: string; category: string; unit: string } | null;
+  kitchenUnit?: { id: string; name: string } | null;
+}
+
 const MEALS = ['BREAKFAST', 'LUNCH', 'DINNER'] as const;
 const input = 'mt-1 w-full rounded-xl border border-[#E3ECE6] px-3.5 py-2 text-xs sm:text-sm bg-white text-[#0C2741] focus:ring-1 focus:ring-[#006B48]';
 const card = 'rounded-2xl border border-[#E3ECE6] bg-white p-5 md:p-6 shadow-sm';
@@ -46,10 +72,23 @@ export function MenuPage() {
   const kitchens = user?.organization?.kitchens ?? [];
   const [items, setItems] = useState<FoodItem[]>([]);
   const [menus, setMenus] = useState<Menu[]>([]);
+  const [importJobs, setImportJobs] = useState<ImportJob[]>([]);
+  const [records, setRecords] = useState<DailyRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('active');
   const [msg, setMsg] = useState('');
+
+  // historical consumption & spreadsheet import state
+  const [showUpload, setShowUpload] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadKitchenId, setUploadKitchenId] = useState('');
+  const [parseBusy, setParseBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [previewRows, setPreviewRows] = useState<Array<Record<string, unknown>>>([]);
+  const [uploadFeedback, setUploadFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [recSearch, setRecSearch] = useState('');
+  const [recMealFilter, setRecMealFilter] = useState('ALL');
 
   // food form
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -86,9 +125,16 @@ export function MenuPage() {
     setLoading(true);
     setError('');
     try {
-      const [fi, mn] = await Promise.all([api<{ items: FoodItem[] }>('/food-items'), api<{ menus: Menu[] }>('/menus')]);
+      const [fi, mn, ij, fr] = await Promise.all([
+        api<{ items: FoodItem[] }>('/food-items'),
+        api<{ menus: Menu[] }>('/menus'),
+        api<{ jobs: ImportJob[] }>('/imports/jobs').catch(() => ({ jobs: [] })),
+        api<{ records: DailyRecord[] }>('/food-records').catch(() => ({ records: [] })),
+      ]);
       setItems(fi.items);
       setMenus(mn.menus);
+      setImportJobs(ij.jobs ?? []);
+      setRecords(fr.records ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load.');
     } finally {
@@ -252,6 +298,174 @@ export function MenuPage() {
       setMBusy(false);
     }
   }
+
+  function handleFileSelect(e: ChangeEvent<HTMLInputElement>) {
+    setUploadFeedback(null);
+    setPreviewRows([]);
+    const f = e.target.files?.[0];
+    if (!f) {
+      setSelectedFile(null);
+      return;
+    }
+    const lower = f.name.toLowerCase();
+    if (!lower.endsWith('.xlsx') && !lower.endsWith('.xls') && !lower.endsWith('.csv')) {
+      setUploadFeedback({ type: 'error', message: 'Please select a valid .xlsx, .xls, or .csv spreadsheet file.' });
+      setSelectedFile(null);
+      return;
+    }
+    setSelectedFile(f);
+  }
+
+  async function handleParsePreview() {
+    if (!selectedFile) {
+      setUploadFeedback({ type: 'error', message: 'Please select a spreadsheet file first.' });
+      return;
+    }
+    setParseBusy(true);
+    setUploadFeedback(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      const kId = uploadKitchenId || (kitchens[0]?.id ?? '');
+      if (kId) formData.append('kitchenUnitId', kId);
+
+      const token = getToken() ?? '';
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let res = await fetch(`${API_BASE}/imports/parse`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (res.status === 404) {
+        const retryFormData = new FormData();
+        retryFormData.append('file', selectedFile);
+        res = await fetch(`${API_BASE}/imports/preview`, {
+          method: 'POST',
+          headers,
+          body: retryFormData,
+        });
+      }
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to parse file preview.');
+      }
+      const data = await res.json();
+      const rows = (data.previewRows || data.preview || []) as Array<Record<string, unknown>>;
+      setPreviewRows(rows);
+      setUploadFeedback({
+        type: 'success',
+        message: `Parsed successfully: ${rows.length} preview rows generated from “${selectedFile.name}”.`,
+      });
+    } catch (e) {
+      setUploadFeedback({ type: 'error', message: e instanceof Error ? e.message : 'Could not parse file.' });
+    } finally {
+      setParseBusy(false);
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!selectedFile) {
+      setUploadFeedback({ type: 'error', message: 'Please select a spreadsheet file first.' });
+      return;
+    }
+    const kitchenId = uploadKitchenId || (kitchens[0]?.id ?? '');
+    if (!kitchenId) {
+      setUploadFeedback({ type: 'error', message: 'Please select a kitchen unit to assign these consumption records.' });
+      return;
+    }
+    setImportBusy(true);
+    setUploadFeedback(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('kitchenUnitId', kitchenId);
+
+      const token = getToken() ?? '';
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let impRes = await fetch(`${API_BASE}/imports/confirm`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (impRes.status === 404) {
+        const retryFormData = new FormData();
+        retryFormData.append('file', selectedFile);
+        retryFormData.append('kitchenUnitId', kitchenId);
+        impRes = await fetch(`${API_BASE}/imports/upload`, {
+          method: 'POST',
+          headers,
+          body: retryFormData,
+        });
+      }
+
+      if (!impRes.ok) {
+        const err = await impRes.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to complete spreadsheet import.');
+      }
+      const data = await impRes.json();
+      setUploadFeedback({
+        type: 'success',
+        message: data.message || `Successfully imported records from “${selectedFile.name}”!`,
+      });
+      setSelectedFile(null);
+      setPreviewRows([]);
+      if (window.showToast) window.showToast('Spreadsheet records imported successfully!');
+      await load();
+    } catch (e) {
+      setUploadFeedback({ type: 'error', message: e instanceof Error ? e.message : 'Import failed.' });
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  // Analytics & Aggregations
+  const totalPreparedKg = records.reduce((s, r) => s + (r.preparedKg || 0), 0);
+  const totalConsumedKg = records.reduce((s, r) => s + (r.servedKg ?? r.soldKg ?? 0), 0);
+  const totalWasteKg = records.reduce((s, r) => s + (r.wasteKg || 0), 0);
+  const efficiencyPct = totalPreparedKg > 0 ? (totalConsumedKg / totalPreparedKg) * 100 : 0;
+  const wastePct = totalPreparedKg > 0 ? (totalWasteKg / totalPreparedKg) * 100 : 0;
+
+  // Item-wise aggregated analysis
+  const itemMap = new Map<string, {
+    name: string;
+    category: string;
+    unit: string;
+    prepared: number;
+    consumed: number;
+    waste: number;
+    count: number;
+  }>();
+
+  records.forEach((r) => {
+    const name = r.foodItem?.name || 'Unassigned Food Item';
+    const category = r.foodItem?.category || 'General';
+    const unit = r.foodItem?.unit || 'kg';
+    const cur = itemMap.get(name) || { name, category, unit, prepared: 0, consumed: 0, waste: 0, count: 0 };
+    cur.prepared += (r.preparedKg || 0);
+    cur.consumed += (r.servedKg ?? r.soldKg ?? 0);
+    cur.waste += (r.wasteKg || 0);
+    cur.count += 1;
+    itemMap.set(name, cur);
+  });
+
+  const itemAggregates = Array.from(itemMap.values()).sort((a, b) => b.prepared - a.prepared);
+
+  // Filtered recent log records
+  const filteredRecords = records.filter((r) => {
+    const matchesMeal = recMealFilter === 'ALL' || r.mealType === recMealFilter;
+    const search = recSearch.toLowerCase().trim();
+    const foodName = (r.foodItem?.name || '').toLowerCase();
+    const kitchenName = (r.kitchenUnit?.name || '').toLowerCase();
+    const matchesSearch = !search || foodName.includes(search) || kitchenName.includes(search);
+    return matchesMeal && matchesSearch;
+  });
 
   return (
     <div className="space-y-5 animate-fadeInUpStagger">
@@ -425,6 +639,390 @@ export function MenuPage() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/* Historical Consumption Data & File Analysis section (Linked to Setup Page .xlsx upload) */}
+      <div className={card}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E3ECE6] pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#006B48]/10 text-base">📊</span>
+              <h2 className="text-base sm:text-lg font-bold text-[#0C2741]">Historical Consumption Data &amp; File Analysis</h2>
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Synchronized with your organization onboarding setup and spreadsheet uploads. View imported files, track consumption trends, and analyze production vs. waste efficiency.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={`${API_BASE}/imports/templates/xlsx`}
+              download
+              className={ghostCls}
+              title="Download Excel sample template"
+            >
+              📥 Download Sample (.xlsx)
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                setShowUpload((v) => !v);
+                setUploadFeedback(null);
+              }}
+              className={btnCls}
+            >
+              {showUpload ? 'Hide Uploader' : '+ Upload Spreadsheet (.xlsx / .csv)'}
+            </button>
+          </div>
+        </div>
+
+        {/* Upload / Import Drawer */}
+        {showUpload && (
+          <div className="mt-4 rounded-xl border border-[#E3ECE6] bg-[#F9FCFA] p-4 text-xs sm:text-sm">
+            <h3 className="font-bold text-[#0C2741] text-sm">Upload New Consumption Spreadsheet</h3>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Upload historical canteen logs or prep sheets in Excel (.xlsx, .xls) or CSV format. New items will be automatically mapped to your food catalog.
+            </p>
+
+            {uploadFeedback && (
+              <div
+                className={`mt-3 rounded-xl p-3 text-xs font-semibold border ${
+                  uploadFeedback.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                    : 'bg-red-50 text-red-800 border-red-200'
+                }`}
+                role="status"
+              >
+                {uploadFeedback.message}
+              </div>
+            )}
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="file-input-menu" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                  Spreadsheet File (.xlsx, .xls, .csv)
+                </label>
+                <input
+                  id="file-input-menu"
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleFileSelect}
+                  className="mt-1 block w-full text-xs text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-[#006B48] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white file:cursor-pointer hover:file:bg-[#004C35]"
+                />
+                {selectedFile && (
+                  <p className="mt-1 text-xs font-semibold text-[#006B48]">
+                    Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="upload-kitchen-select" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                  Assign to Kitchen Unit
+                </label>
+                <select
+                  id="upload-kitchen-select"
+                  value={uploadKitchenId}
+                  onChange={(e) => setUploadKitchenId(e.target.value)}
+                  className={input}
+                >
+                  <option value="">— Primary Kitchen (Default) —</option>
+                  {kitchens.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleParsePreview()}
+                disabled={!selectedFile || parseBusy}
+                className={ghostCls}
+              >
+                {parseBusy ? 'Parsing…' : '🔍 Preview File Data'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmImport()}
+                disabled={!selectedFile || importBusy}
+                className={btnCls}
+              >
+                {importBusy ? 'Importing…' : '✓ Confirm & Import Records'}
+              </button>
+            </div>
+
+            {/* Preview table if parsed */}
+            {previewRows.length > 0 && (
+              <div className="mt-4 overflow-hidden rounded-xl border border-[#E3ECE6] bg-white">
+                <div className="bg-[#F2F7F4] px-3 py-2 border-b border-[#E3ECE6] flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#0C2741]">Parsed Sample Preview (First {previewRows.length} Rows)</span>
+                  <span className="text-[11px] text-gray-500 font-medium">Auto-validated</span>
+                </div>
+                <div className="overflow-x-auto max-h-48">
+                  <table className="w-full text-left text-xs text-[#0C2741]">
+                    <thead className="bg-[#FAFCFB] border-b border-[#E3ECE6] text-[11px] font-semibold text-gray-500">
+                      <tr>
+                        {Object.keys(previewRows[0] || {}).slice(0, 7).map((col) => (
+                          <th key={col} className="px-3 py-1.5 whitespace-nowrap">{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E3ECE6]">
+                      {previewRows.slice(0, 5).map((row, rIdx) => (
+                        <tr key={rIdx} className="hover:bg-gray-50">
+                          {Object.keys(previewRows[0] || {}).slice(0, 7).map((col, cIdx) => (
+                            <td key={cIdx} className="px-3 py-1.5 whitespace-nowrap text-gray-600">
+                              {String(row[col] ?? '')}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Uploaded Spreadsheet Files / Import Jobs */}
+        <div className="mt-6">
+          <h3 className="text-xs sm:text-sm font-bold text-[#0C2741] uppercase tracking-wider">
+            Uploaded Files &amp; Import History ({importJobs.length})
+          </h3>
+          {importJobs.length === 0 ? (
+            <div className="mt-2 rounded-xl border border-dashed border-[#E3ECE6] p-4 text-center text-xs text-gray-500">
+              No spreadsheet files imported yet. Files uploaded during initial Organization Setup or via the uploader above will appear here with complete verification metrics.
+            </div>
+          ) : (
+            <div className="mt-2 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {importJobs.map((j) => (
+                <div key={j.id} className="rounded-xl border border-[#E3ECE6] bg-[#FAFCFB] p-3.5 hover:border-[#006B48]/30 transition-all flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <span className="text-emerald-700 text-sm">📄</span>
+                        <p className="font-bold text-xs sm:text-sm text-[#0C2741] truncate" title={j.fileName}>
+                          {j.fileName}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        j.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {j.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      Uploaded: {new Date(j.createdAt).toLocaleDateString()} at {new Date(j.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    <div className="mt-2.5 flex items-center gap-2 text-xs">
+                      <span className="rounded-md bg-white border border-[#E3ECE6] px-2 py-0.5 font-semibold text-gray-600 text-[11px]">
+                        Total: {j.totalRows ?? '—'}
+                      </span>
+                      <span className="rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-semibold text-emerald-800 text-[11px]">
+                        ✓ {j.successRows ?? '—'} accepted
+                      </span>
+                      {(j.errorRows ?? 0) > 0 && (
+                        <span className="rounded-md bg-red-50 border border-red-200 px-2 py-0.5 font-semibold text-red-700 text-[11px]">
+                          ⚠ {j.errorRows} errors
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {(j.errorRows ?? 0) > 0 && (
+                    <div className="mt-2 pt-2 border-t border-[#E3ECE6]">
+                      <a
+                        href={`${API_BASE}/imports/jobs/${j.id}/errors.csv`}
+                        download
+                        className="text-[11px] font-semibold text-red-600 hover:underline flex items-center gap-1"
+                      >
+                        📥 Download Error Report (.csv)
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Consumption KPI Cards */}
+        <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-xl border border-[#E3ECE6] bg-[#F9FCFA] p-3.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Total Prepared</p>
+            <p className="mt-1 text-lg sm:text-xl font-bold text-[#0C2741]">{totalPreparedKg.toFixed(1)} <span className="text-xs font-normal text-gray-500">kg</span></p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{records.length} recorded entries</p>
+          </div>
+          <div className="rounded-xl border border-[#E3ECE6] bg-[#F9FCFA] p-3.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Total Consumed</p>
+            <p className="mt-1 text-lg sm:text-xl font-bold text-[#006B48]">{totalConsumedKg.toFixed(1)} <span className="text-xs font-normal text-gray-500">kg</span></p>
+            <p className="text-[11px] text-emerald-700 font-medium mt-0.5">Efficiency: {efficiencyPct.toFixed(1)}%</p>
+          </div>
+          <div className="rounded-xl border border-[#E3ECE6] bg-[#F9FCFA] p-3.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Total Waste</p>
+            <p className="mt-1 text-lg sm:text-xl font-bold text-red-700">{totalWasteKg.toFixed(1)} <span className="text-xs font-normal text-gray-500">kg</span></p>
+            <p className="text-[11px] text-red-600 font-medium mt-0.5">Waste ratio: {wastePct.toFixed(1)}%</p>
+          </div>
+          <div className="rounded-xl border border-[#E3ECE6] bg-[#F9FCFA] p-3.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Analyzed Items</p>
+            <p className="mt-1 text-lg sm:text-xl font-bold text-[#0C2741]">{itemAggregates.length}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">Across all meal services</p>
+          </div>
+        </div>
+
+        {/* Item-Wise Consumption & Waste Analysis Table */}
+        <div className="mt-6">
+          <h3 className="text-xs sm:text-sm font-bold text-[#0C2741] uppercase tracking-wider">
+            Item-Wise Consumption &amp; Waste Analysis
+          </h3>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Performance breakdown per dish based on historical spreadsheet records and continuous daily logs.
+          </p>
+
+          {itemAggregates.length === 0 ? (
+            <p className="mt-2 text-xs text-gray-500">No consumption logs recorded yet.</p>
+          ) : (
+            <div className="mt-3 overflow-hidden rounded-xl border border-[#E3ECE6]">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-[#0C2741]">
+                  <thead className="bg-[#F2F7F4] border-b border-[#E3ECE6] text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-3.5 py-2.5">Food Item / Dish</th>
+                      <th className="px-3.5 py-2.5">Category</th>
+                      <th className="px-3.5 py-2.5 text-right">Prepared</th>
+                      <th className="px-3.5 py-2.5 text-right">Consumed</th>
+                      <th className="px-3.5 py-2.5 text-right">Waste</th>
+                      <th className="px-3.5 py-2.5">Consumption Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E3ECE6] bg-white">
+                    {itemAggregates.map((item) => {
+                      const rate = item.prepared > 0 ? (item.consumed / item.prepared) * 100 : 0;
+                      return (
+                        <tr key={item.name} className="hover:bg-[#F9FCFA]">
+                          <td className="px-3.5 py-2.5 font-bold text-[#0C2741]">
+                            {item.name}
+                            <span className="block text-[10px] text-gray-400 font-normal">{item.count} log entries</span>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-gray-500">{item.category}</td>
+                          <td className="px-3.5 py-2.5 text-right font-medium text-gray-700">{item.prepared.toFixed(1)} {item.unit}</td>
+                          <td className="px-3.5 py-2.5 text-right font-semibold text-[#006B48]">{item.consumed.toFixed(1)} {item.unit}</td>
+                          <td className="px-3.5 py-2.5 text-right font-semibold text-red-600">{item.waste.toFixed(1)} {item.unit}</td>
+                          <td className="px-3.5 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-2 w-24 rounded-full bg-gray-200 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${rate >= 85 ? 'bg-[#006B48]' : rate >= 70 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                  style={{ width: `${Math.min(100, Math.max(0, rate))}%` }}
+                                />
+                              </div>
+                              <span className="font-semibold text-xs text-[#0C2741]">{rate.toFixed(1)}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Filterable Historical Consumption Records Log */}
+        <div className="mt-6 border-t border-[#E3ECE6] pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xs sm:text-sm font-bold text-[#0C2741] uppercase tracking-wider">
+                Recent Historical Consumption Records ({filteredRecords.length})
+              </h3>
+              <p className="text-[11px] text-gray-400">Search and verify detailed entries parsed from spreadsheets or daily logs.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                placeholder="Search food or kitchen…"
+                value={recSearch}
+                onChange={(e) => setRecSearch(e.target.value)}
+                className="rounded-xl border border-[#E3ECE6] px-3 py-1.5 text-xs bg-white text-[#0C2741] focus:ring-1 focus:ring-[#006B48]"
+                aria-label="Search consumption records"
+              />
+              <select
+                value={recMealFilter}
+                onChange={(e) => setRecMealFilter(e.target.value)}
+                className="rounded-xl border border-[#E3ECE6] px-3 py-1.5 text-xs bg-white text-[#0C2741]"
+                aria-label="Filter records by meal type"
+              >
+                <option value="ALL">All Meals</option>
+                <option value="BREAKFAST">Breakfast</option>
+                <option value="LUNCH">Lunch</option>
+                <option value="DINNER">Dinner</option>
+              </select>
+            </div>
+          </div>
+
+          {filteredRecords.length === 0 ? (
+            <p className="mt-3 text-xs text-gray-500">No matching historical consumption records found.</p>
+          ) : (
+            <div className="mt-3 overflow-hidden rounded-xl border border-[#E3ECE6]">
+              <div className="overflow-x-auto max-h-72">
+                <table className="w-full text-left text-xs text-[#0C2741]">
+                  <thead className="bg-[#F2F7F4] border-b border-[#E3ECE6] text-[11px] font-semibold text-gray-500 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">Meal</th>
+                      <th className="px-3 py-2">Food Item</th>
+                      <th className="px-3 py-2">Kitchen</th>
+                      <th className="px-3 py-2 text-right">Prepared</th>
+                      <th className="px-3 py-2 text-right">Served/Sold</th>
+                      <th className="px-3 py-2 text-right">Waste</th>
+                      <th className="px-3 py-2 text-right">Surplus/Rem.</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E3ECE6] bg-white">
+                    {filteredRecords.slice(0, 30).map((r) => (
+                      <tr key={r.id} className="hover:bg-[#F9FCFA]">
+                        <td className="px-3 py-2 whitespace-nowrap text-gray-600 font-medium">
+                          {new Date(r.date).toLocaleDateString()}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-700">
+                            {r.mealType}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 font-bold text-[#0C2741]">
+                          {r.foodItem?.name ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500">
+                          {r.kitchenUnit?.name ?? 'Main'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-gray-700">
+                          {r.preparedKg} kg
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold text-[#006B48]">
+                          {r.servedKg ?? r.soldKg ?? 0} kg
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold text-red-600">
+                          {r.wasteKg} kg
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold text-amber-700">
+                          {r.remainingKg ?? 0} kg
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {filteredRecords.length > 30 && (
+                <div className="bg-[#FAFCFB] px-3 py-1.5 text-center text-[11px] text-gray-400 border-t border-[#E3ECE6]">
+                  Showing first 30 of {filteredRecords.length} records. Use search above to narrow down.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

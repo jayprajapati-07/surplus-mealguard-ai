@@ -1,13 +1,13 @@
 # Interactive Controls & UI Audit Checklist (No Dead Controls)
 
-Generated on: 2026-09-30T08:24:03.137Z
+Generated on: 2026-09-30T08:44:01.503Z
 
 ## Summary Statistics
 - **Files Audited**: 27
-- **Buttons Verified**: 116
+- **Buttons Verified**: 119
 - **Links & Navigation Routes Verified**: 21
 - **Forms & Submission Handlers Verified**: 20
-- **API Endpoint Calls Verified**: 80
+- **API Endpoint Calls Verified**: 82
 - **Violations Found**: 0
 
 ## Verification Status
@@ -213,10 +213,15 @@ Generated on: 2026-09-30T08:24:03.137Z
 | Button | `{mBusy ? 'Saving…' : mEditing ` | ✅ PASS |
 | Button | `startMenuEdit(m)} className={g` | ✅ PASS |
 | Button | `setConfirm({ action: 'deleteMe` | ✅ PASS |
+| Button | `{                 setShowUploa` | ✅ PASS |
+| Button | `void handleParsePreview()}    ` | ✅ PASS |
+| Button | `void handleConfirmImport()}   ` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | Form | `form` | ✅ PASS |
 | API Call | `/food-items` | ✅ PASS |
 | API Call | `/menus` | ✅ PASS |
+| API Call | `/imports/jobs` | ✅ PASS |
+| API Call | `/food-records` | ✅ PASS |
 | API Call | `/food-items/` | ✅ PASS |
 | API Call | `/food-items` | ✅ PASS |
 | API Call | `/menus/` | ✅ PASS |
