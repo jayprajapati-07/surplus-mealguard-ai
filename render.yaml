@@ -7,17 +7,18 @@ services:
     runtime: node
     plan: free
     rootDir: server
-    buildCommand: npm install --include=dev && npx prisma generate && npm run build
+    buildCommand: npm install --include=dev && npx prisma generate && npx prisma db push --accept-data-loss=false && npm run build
     startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
       - key: DATABASE_URL
-        sync: false # Set in Render Dashboard: your Supabase PostgreSQL connection string
+        sync: false # Set in Render Dashboard: Supabase POOLED connection string (Supavisor, ap-south-1)
       - key: CLIENT_ORIGIN
-        sync: false # Set to your frontend Render URL or '*'
+        sync: false # Set to your exact frontend URL, e.g. https://mealguard-web.onrender.com (no '*', no trailing slash)
       - key: SESSION_TTL_HOURS
         value: 72
       - key: RATE_LIMIT_AUTH_MAX
