@@ -93,10 +93,25 @@ export function parseDateCell(v: unknown): Date | null {
     // Assume DD/MM/YYYY (institutional locale); fall back to MM/DD if day invalid
     let day = Number(a);
     let month = Number(b);
-    if (day > 31 || month > 12) return null;
+    if (day < 1 || day > 31 || month < 1 || month > 12) {
+      // Try swapped MM/DD interpretation (e.g. 02/13 → Feb 13) before giving up.
+      const altMonth = Number(a);
+      const altDay = Number(b);
+      if (altMonth < 1 || altMonth > 12 || altDay < 1 || altDay > 31) return null;
+      const alt = new Date(Date.UTC(year, altMonth - 1, altDay));
+      if (alt.getUTCFullYear() !== year || alt.getUTCMonth() !== altMonth - 1 || alt.getUTCDate() !== altDay) return null;
+      return isNaN(alt.getTime()) ? null : alt;
+    }
     let d = new Date(Date.UTC(year, month - 1, day));
-    if (d.getUTCDate() !== day && day <= 12) {
-      d = new Date(Date.UTC(year, Number(a) - 1, Number(b)));
+    // Reject impossible calendar dates (e.g. 31/02 rolls over to March) instead of silently correcting.
+    if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+      // Try MM/DD/YYYY interpretation once before giving up.
+      const altDay = Number(b);
+      const altMonth = Number(a);
+      if (altMonth < 1 || altMonth > 12 || altDay < 1 || altDay > 31) return null;
+      const alt = new Date(Date.UTC(year, altMonth - 1, altDay));
+      if (alt.getUTCFullYear() !== year || alt.getUTCMonth() !== altMonth - 1 || alt.getUTCDate() !== altDay) return null;
+      return isNaN(alt.getTime()) ? null : alt;
     }
     return isNaN(d.getTime()) ? null : d;
   }

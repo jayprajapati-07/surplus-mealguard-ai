@@ -263,7 +263,7 @@ router.post(['/confirm', '/execute'], requireRole('SUPER_ADMIN', 'INSTITUTION_AD
           const v = cell(row, c);
           if (v === undefined || v === null || String(v).trim() === '') {
             if (fld === 'target') return null;
-            if (fld === 'surplus' && !c) return 0;
+            if (fld === 'surplus') return 0;
             return 'bad';
           }
           const n = num(v);

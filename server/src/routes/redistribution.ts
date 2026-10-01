@@ -502,7 +502,13 @@ router.post('/:id/confirm-receipt', requireRole('NGO'), async (req: Authenticate
   });
   await audit('redistribution.receipt', { userId: req.userId, organizationId: cur.organizationId, entityType: 'RedistributionRecord', entityId: cur.id,
     metadata: { from: 'HANDED_OVER', to: 'COMPLETED' } });
-  const factors = await prisma.impactFactor.findMany({ where: { key: { in: ['CO2_PER_KG_FOOD', 'COST_PER_KG_FOOD'] } } });
+  const factors = await prisma.impactFactor.findMany({
+    where: {
+      key: { in: ['CO2_PER_KG_FOOD', 'COST_PER_KG_FOOD'] },
+      OR: [{ organizationId: cur.organizationId }, { organizationId: null }],
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
   const co2 = factors.find((f) => f.key === 'CO2_PER_KG_FOOD')?.value ?? 0;
   const cost = factors.find((f) => f.key === 'COST_PER_KG_FOOD')?.value ?? 0;
   const day = new Date();

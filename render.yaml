@@ -21,11 +21,11 @@ services:
       - key: SESSION_TTL_HOURS
         value: 72
       - key: RATE_LIMIT_AUTH_MAX
-        value: 5000
+        value: 30
       - key: SUPABASE_URL
-        value: https://xewlimzaswophixqwogi.supabase.co
+        sync: false # Set in Render Dashboard: Supabase project URL (optional)
       - key: SUPABASE_ANON_KEY
-        value: sb_publishable_gEDnnWdnBAbokI1-LA_TCg_MR6uPfKT
+        sync: false # Set in Render Dashboard: Supabase publishable/anon key (optional)
 
   # -------------------------------------------------------------
   # 2. Frontend Static Site (React + Vite + Tailwind CSS)
@@ -43,6 +43,6 @@ services:
       - key: VITE_API_URL
         sync: false # Set to https://<your-backend-service-name>.onrender.com/api
       - key: VITE_SUPABASE_URL
-        value: https://xewlimzaswophixqwogi.supabase.co
+        sync: false # Optional: Supabase project URL
       - key: VITE_SUPABASE_ANON_KEY
-        value: sb_publishable_gEDnnWdnBAbokI1-LA_TCg_MR6uPfKT
+        sync: false # Optional: Supabase publishable/anon key

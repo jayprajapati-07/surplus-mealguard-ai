@@ -38,7 +38,7 @@ router.get('/overview', requireRole(...READ_ROLES), async (req: AuthenticatedReq
     ? await prisma.kitchenUnit.findFirst({ where: { id: parsed.data.kitchenUnitId, organizationId: orgId } })
     : await prisma.kitchenUnit.findFirst({ where: { organizationId: orgId }, orderBy: { name: 'asc' } });
   if (parsed.data.kitchenUnitId && !kitchen) {
-    return res.status(400).json({ error: 'Kitchen/unit not found in your organization.' });
+    return res.status(404).json({ error: 'Kitchen/unit not found in your organization.' });
   }
   if (!kitchen) return res.status(404).json({ error: 'No kitchen/unit yet. Complete onboarding first.' });
 
@@ -74,15 +74,22 @@ router.get('/overview', requireRole(...READ_ROLES), async (req: AuthenticatedReq
     const stored = t.feedbackJson ?? null;
     const fresh = JSON.stringify(feedback);
     if (stored !== fresh) {
-      await prisma.productionTarget.update({ where: { id: t.id }, data: { feedbackJson: fresh } });
+      // Best-effort feedback refresh — never fail the dashboard read on a write race.
+      await prisma.productionTarget.update({ where: { id: t.id }, data: { feedbackJson: fresh } }).catch(() => undefined);
     }
     const lw = byKey.get(`${t.foodItemId}|${t.mealType}|${lastWeekKey}`) ?? null;
+    let inputs: unknown = null;
+    try {
+      inputs = t.inputsJson ? JSON.parse(t.inputsJson as string) : null;
+    } catch {
+      inputs = null;
+    }
     rows.push({
       id: t.id, foodItemId: t.foodItemId, food: t.foodItem?.name ?? '—', mealType: t.mealType,
       predictedKg: t.predictedKg, bufferKg: t.bufferKg, recommendedKg: t.recommendedKg,
       adjustedKg: t.adjustedKg, adjustReason: t.adjustReason, effectiveKg: effective,
       status: t.status, memoryVersion: t.memoryVersion,
-      inputs: t.inputsJson ? JSON.parse(t.inputsJson as string) : null,
+      inputs,
       feedback,
       actual: actual ? {
         producedKg: actual.preparedKg, soldKg: actual.soldKg ?? actual.servedKg,
@@ -109,7 +116,7 @@ router.get('/overview', requireRole(...READ_ROLES), async (req: AuthenticatedReq
   let worst: 'high' | 'medium' | 'low' = 'high';
   let basedOn = 0;
   for (const r of rows) {
-    const c = r.inputs?.dataConfidence as 'high' | 'medium' | 'low' | undefined;
+    const c = (r.inputs as { dataConfidence?: unknown } | null)?.dataConfidence as 'high' | 'medium' | 'low' | undefined;
     if (!c || !(c in rank)) { worst = 'low'; continue; }
     basedOn++;
     if (rank[c] < rank[worst]) worst = c;

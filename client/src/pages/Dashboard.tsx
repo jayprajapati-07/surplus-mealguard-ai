@@ -205,7 +205,7 @@ export function Dashboard() {
         body: JSON.stringify({ kitchenUnitId: kitchenId, date }),
       });
       setGenMsg(d.message);
-      if (window.showToast) window.showToast('AI Targets generated successfully!');
+      if (window.showToast) window.showToast('Forecast targets generated successfully!');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed.');
@@ -407,18 +407,18 @@ export function Dashboard() {
   const wasteTotal = ov?.flowSummary.wasteKg ?? 0;
   const remainingTotal = ov?.flowSummary.remainingKg ?? 0;
 
-  // Meal counts for Live Food Flow & Impact
-  const preparedMeals = Math.round(prodTotal > 0 ? prodTotal * 3 : 2480);
-  const servedMeals = Math.round(servedTotal > 0 ? servedTotal * 3 : 1960);
-  const redistributedMeals = Math.round(remainingTotal > 0 ? remainingTotal * 3 : 320);
+  // Meal counts for Live Food Flow & Impact (honest: 0 when no production yet, never fake samples)
+  const preparedMeals = Math.round(prodTotal * 3);
+  const servedMeals = Math.round(servedTotal * 3);
+  const redistributedMeals = Math.round(remainingTotal * 3);
 
-  const preparedPct = Math.min(100, Math.max(15, Math.round((servedMeals / (preparedMeals || 1)) * 100)));
-  const servedPct = Math.min(100, Math.max(20, Math.round((servedMeals / (preparedMeals || 1)) * 90)));
-  const redistPct = Math.min(100, Math.max(10, Math.round((redistributedMeals / (preparedMeals || 1)) * 100)));
+  const preparedPct = preparedMeals > 0 ? Math.min(100, Math.max(15, Math.round((servedMeals / preparedMeals) * 100))) : 0;
+  const servedPct = preparedMeals > 0 ? Math.min(100, Math.max(20, Math.round((servedMeals / preparedMeals) * 90))) : 0;
+  const redistPct = preparedMeals > 0 ? Math.min(100, Math.max(10, Math.round((redistributedMeals / preparedMeals) * 100))) : 0;
 
-  // Impact metrics
-  const impactKg = impactPeriod === 'THIS_MONTH' ? 312 : 285;
-  const impactMeals = impactKg * 3.33;
+  // Impact metrics (honest estimates from today's remaining; 0 when no data)
+  const impactKg = r3(remainingTotal);
+  const impactMeals = Math.round(impactKg * 3.33);
 
   return (
     <div className="space-y-5">
@@ -436,7 +436,7 @@ export function Dashboard() {
 
       {/* BEGIN: TopMetricsRow */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4" data-purpose="top-metrics">
-        {/* Metric Card 1: Today's AI Generated Target */}
+        {/* Metric Card 1: Today's Forecast Target */}
         <div className="animate-card-1 group relative bg-white rounded-2xl border border-[#E3ECE6] pt-3 pb-5 px-5 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col justify-between">
           <div className="absolute top-0 left-0 right-0 h-1 bg-[#6366F1]"></div>
           <div>
@@ -448,8 +448,8 @@ export function Dashboard() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="font-bold text-[15px] text-[#0C2741] leading-tight">Today's AI Generated Target</h3>
-                  <p className="text-xs text-gray-500 font-normal">AI production recommendation</p>
+                  <h3 className="font-bold text-[15px] text-[#0C2741] leading-tight">Today's Forecast Target</h3>
+                  <p className="text-xs text-gray-500 font-normal">Statistical forecast (memory-v1)</p>
                 </div>
               </div>
             </div>
@@ -465,20 +465,24 @@ export function Dashboard() {
 
           <div className="flex items-center justify-between mt-2 pt-1">
             <p className="text-xs text-gray-500 font-medium">
-              {rows.length > 0 ? `Active target for ${rows.length} items` : 'No AI target generated yet'}
+              {rows.length > 0 ? `Active target for ${rows.length} items` : 'No forecast target generated yet'}
             </p>
             <button
               className={frostedBtnStyle}
               style={frostedBtnBg}
               onClick={() => {
                 if (rows.length === 0) {
+                  if (!canManage) {
+                    if (window.showToast) window.showToast('Ask a kitchen manager to generate targets.');
+                    return;
+                  }
                   void onGenerate();
                 } else {
                   scrollToSection('targets-breakdown-section');
-                  if (window.showToast) window.showToast('AI Target module accessed: viewing detailed breakdowns.');
+                  if (window.showToast) window.showToast('Forecast target module accessed: viewing detailed breakdowns.');
                 }
               }}
-              aria-label="Access AI Target module"
+              aria-label="Access forecast target module"
             >
               <svg className="w-4 h-4 text-black" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" viewBox="0 0 24 24">
                 <path d="M4 15s1-2.5 3-2.5 2.5 4 4.5 4 3.5-7 5.5-7 3 4 3 4" />
@@ -976,7 +980,7 @@ export function Dashboard() {
             </p>
             <p className="mx-auto mt-1 max-w-md text-xs text-gray-500">
               {canManage
-                ? 'Click "Generate AI Targets" above or use "ENTER" on Today’s Production card to specify individual meal targets.'
+                ? 'Click "Generate forecast targets" above or use "ENTER" on Today’s Production card to specify individual meal targets.'
                 : 'Ask a kitchen manager to generate targets for this date.'}
             </p>
           </div>
@@ -1111,7 +1115,7 @@ export function Dashboard() {
         <div className="bg-white rounded-2xl border border-[#E3ECE6] p-5 shadow-sm">
           <h2 className="text-base font-bold text-[#0C2741]">Production Safety Buffer</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Configures extra buffer margin added to AI demand prediction to prevent unexpected stockouts.
+            Configures extra buffer margin added to statistical demand forecast to prevent unexpected stockouts.
           </p>
 
           {canManage ? (

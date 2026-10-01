@@ -56,15 +56,38 @@ export function Layout({ children }: { children: ReactNode }) {
         setProfileOpen(false);
       }
     }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setProfileOpen(false);
+        setMenuOpen(false);
+      }
+    }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, []);
+
+  // Lock body scroll when the mobile drawer is open; desktop sidebar stays static.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!showNotif) { setUnread(0); return; }
-    api<{ unreadCount: number }>('/notifications/unread-count')
+    const ctrl = new AbortController();
+    api<{ unreadCount: number }>('/notifications/unread-count', { signal: ctrl.signal })
       .then((d) => setUnread(d.unreadCount))
       .catch(() => setUnread(0));
+    return () => ctrl.abort();
   }, [showNotif, user?.id, location.pathname]);
 
   async function handleLogout() {
@@ -168,7 +191,9 @@ export function Layout({ children }: { children: ReactNode }) {
               <svg className="w-5 h-5 text-gray-200" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <span className="notification-ping absolute top-2 right-2 w-2 h-2 rounded-full bg-[#F59E0B] ring-2 ring-[#004C35]"></span>
+              {unread > 0 && (
+                <span className="notification-ping absolute top-2 right-2 w-2 h-2 rounded-full bg-[#F59E0B] ring-2 ring-[#004C35]"></span>
+              )}
               {unread > 0 && (
                 <span data-testid="notif-badge" className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white shadow">
                   {unread > 99 ? '99+' : unread}
@@ -180,10 +205,12 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* User Dropdown Pill */}
           {user && (
             <div className="relative" ref={profileRef}>
-              <div
+              <button
+                type="button"
                 onClick={() => setProfileOpen((v) => !v)}
-                className="flex items-center bg-[#003B29]/60 hover:bg-[#003B29] transition-all duration-200 hover:scale-[1.02] active:scale-95 py-1 pl-1 pr-3 rounded-full border border-[#005e42] cursor-pointer"
+                className="flex items-center bg-[#003B29]/60 hover:bg-[#003B29] transition-all duration-200 hover:scale-[1.02] active:scale-95 py-1 pl-1 pr-3 rounded-full border border-[#005e42] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#98D8BA]"
                 aria-expanded={profileOpen}
+                aria-haspopup="menu"
                 aria-label="User account menu"
               >
                 <div className="w-8 h-8 rounded-full bg-[#0284C7] flex items-center justify-center font-bold text-white text-sm shadow-sm">
@@ -193,7 +220,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 <svg className={`w-4 h-4 ml-1.5 text-gray-300 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-              </div>
+              </button>
 
               {profileOpen && (
                 <div className="absolute right-0 mt-2 w-60 rounded-2xl border border-stone-200 bg-white py-2 text-stone-800 shadow-2xl z-50 animate-fadeInUpStagger">
@@ -252,14 +279,15 @@ export function Layout({ children }: { children: ReactNode }) {
       )}
 
       {/* Backdrop Overlay for Mobile/Tablet Drawer */}
-      <div
-        aria-hidden="true"
-        onClick={() => setMenuOpen(false)}
-        className={`fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 transition-opacity duration-300 ease-in-out lg:hidden ${
-          menuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
-        id="sidebarBackdrop"
-      />
+      {menuOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar menu"
+          onClick={() => setMenuOpen(false)}
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 transition-opacity duration-300 ease-in-out lg:hidden opacity-100 pointer-events-auto"
+          id="sidebarBackdrop"
+        />
+      )}
 
       {/* Main Container */}
       <div className="flex flex-1 w-full relative min-h-0 overflow-hidden">

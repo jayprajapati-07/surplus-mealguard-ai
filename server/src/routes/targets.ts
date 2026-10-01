@@ -286,7 +286,7 @@ router.post('/quick-target', requireRole(...MANAGE_ROLES), async (req: Authentic
     mealType: z.enum(['BREAKFAST', 'LUNCH', 'DINNER']),
     targetKg: z.coerce.number().positive('Target must be positive (kg).').max(1000000),
     demandKg: z.coerce.number().min(0).optional(),
-    reason: z.string().optional(),
+    reason: z.string().trim().min(5, 'Please give a reason (min 5 characters) so the audit trail stays honest.').max(500).optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return zodError(res, parsed.error);
@@ -294,8 +294,15 @@ router.post('/quick-target', requireRole(...MANAGE_ROLES), async (req: Authentic
   if (!orgId) return;
 
   const d = new Date(parsed.data.date);
+  if (isNaN(d.getTime())) return res.status(400).json({ error: 'Date is not valid.' });
   const day = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const nextDay = new Date(day.getTime() + 86400000);
+
+  // Ownership checks — never trust client-supplied IDs across tenants.
+  const kitchen = await prisma.kitchenUnit.findFirst({ where: { id: parsed.data.kitchenUnitId, organizationId: orgId } });
+  if (!kitchen) return res.status(404).json({ error: 'Kitchen/unit not found in your organization.' });
+  const food = await prisma.foodItem.findFirst({ where: { id: parsed.data.foodItemId, organizationId: orgId } });
+  if (!food) return res.status(404).json({ error: 'Food item not found in your organization.' });
 
   const existing = await prisma.productionTarget.findFirst({
     where: {

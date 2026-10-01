@@ -36,17 +36,20 @@ router.post('/signup', async (req, res) => {
     const passwordHash = await hashPassword(password);
     const assignedRole = role ?? 'INSTITUTION_ADMIN';
 
-    // Register user in Supabase Auth (visible in Supabase Dashboard -> Authentication -> Users)
-    try {
-      await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { name, role: assignedRole },
-        },
-      });
-    } catch (sbErr) {
-      console.warn('Supabase Auth registration notice:', sbErr);
+    // Register user in Supabase Auth when configured (visible in Supabase Dashboard -> Authentication -> Users)
+    if (supabase) {
+      try {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name, role: assignedRole },
+          },
+        });
+        if (error) console.warn('Supabase Auth registration notice:', error.message);
+      } catch (sbErr) {
+        console.warn('Supabase Auth registration notice:', sbErr);
+      }
     }
 
     // Save user in Supabase PostgreSQL database
@@ -65,7 +68,6 @@ router.post('/signup', async (req, res) => {
     return res.status(201).json({
       message: 'Account created successfully! Please log in with your email and password.',
       userId: user.id,
-      debugToken: 'verified',
     });
   } catch {
     return res.status(500).json({ error: 'Could not create account. Please try again.' });
@@ -85,18 +87,21 @@ router.post('/login', async (req, res) => {
   let user = await prisma.user.findUnique({ where: { email } });
 
   // If not found in Prisma, try signing in with Supabase Auth in case created via Supabase dashboard
-  if (!user) {
+  if (!user && supabase) {
     try {
-      const { data: sbData } = await supabase.auth.signInWithPassword({ email, password });
-      if (sbData?.user) {
+      const { data: sbData, error: sbError } = await supabase.auth.signInWithPassword({ email, password });
+      if (!sbError && sbData?.user) {
         const passwordHash = await hashPassword(password);
+        const allowedRoles = ['INSTITUTION_ADMIN', 'KITCHEN_MANAGER', 'STAFF', 'NGO'] as const;
+        const metaRole = sbData.user.user_metadata?.role;
+        const safeRole = (allowedRoles as readonly string[]).includes(metaRole) ? metaRole : 'INSTITUTION_ADMIN';
+        // Never trust Supabase UUID as local PK (local IDs are cuid). Let Prisma generate the id.
         user = await prisma.user.create({
           data: {
-            id: sbData.user.id,
             email,
             passwordHash,
             name: sbData.user.user_metadata?.name || email.split('@')[0],
-            role: sbData.user.user_metadata?.role || 'INSTITUTION_ADMIN',
+            role: safeRole,
             emailVerified: true,
           },
         });

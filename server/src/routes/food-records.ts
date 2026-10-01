@@ -62,11 +62,13 @@ router.get('/', async (req: AuthenticatedRequest, res) => {
   if (typeof req.query.foodItemId === 'string' && req.query.foodItemId) where.foodItemId = req.query.foodItemId;
   if (typeof req.query.from === 'string' && req.query.from) {
     const d = new Date(req.query.from);
-    if (!isNaN(d.getTime())) (where as { date?: object }).date = { ...(where.date as object ?? {}), gte: d };
+    if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid "from" date.' });
+    (where as { date?: object }).date = { ...(where.date as object ?? {}), gte: d };
   }
   if (typeof req.query.to === 'string' && req.query.to) {
     const d = new Date(req.query.to);
-    if (!isNaN(d.getTime())) (where as { date?: object }).date = { ...(where.date as object ?? {}), lte: d };
+    if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid "to" date.' });
+    (where as { date?: object }).date = { ...(where.date as object ?? {}), lte: d };
   }
   const records = await prisma.dailyFoodRecord.findMany({
     where,
@@ -90,9 +92,9 @@ router.post('/', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGE
   if (!MEALS.includes(v.mealType)) return res.status(400).json({ error: 'Meal must be breakfast, lunch, or dinner.' });
 
   const kitchen = await prisma.kitchenUnit.findFirst({ where: { id: v.kitchenUnitId, organizationId: orgId } });
-  if (!kitchen) return res.status(400).json({ error: 'Kitchen/unit not found in your organization.' });
+  if (!kitchen) return res.status(404).json({ error: 'Kitchen/unit not found in your organization.' });
   const food = await prisma.foodItem.findFirst({ where: { id: v.foodItemId, organizationId: orgId } });
-  if (!food) return res.status(400).json({ error: 'Food item not found in your organization. Menu lines must reuse saved food items.' });
+  if (!food) return res.status(404).json({ error: 'Food item not found in your organization. Menu lines must reuse saved food items.' });
   if (!food.isActive) return res.status(400).json({ error: `“${food.name}” is archived. Restore it before recording flow.` });
 
   const err = coherenceError(v.producedKg, v.soldKg, v.wasteKg, v.remainingKg, v.adjustmentReason);
@@ -139,6 +141,11 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANA
   const v = parsed.data;
   const date = new Date(v.date);
   if (isNaN(date.getTime())) return res.status(400).json({ error: 'Date is not valid.' });
+  // Validate kitchen/food ownership on edit — moves are allowed but must stay in-org.
+  const kitchen = await prisma.kitchenUnit.findFirst({ where: { id: v.kitchenUnitId, organizationId: orgId } });
+  if (!kitchen) return res.status(400).json({ error: 'Kitchen/unit not found in your organization.' });
+  const food = await prisma.foodItem.findFirst({ where: { id: v.foodItemId, organizationId: orgId } });
+  if (!food) return res.status(400).json({ error: 'Food item not found in your organization.' });
   const err = coherenceError(v.producedKg, v.soldKg, v.wasteKg, v.remainingKg, v.adjustmentReason);
   if (err) return res.status(400).json({ error: err });
   const numbersChanged =
@@ -147,13 +154,15 @@ router.put('/:id', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANA
   if (numbersChanged && (!v.correctionReason || v.correctionReason.trim().length < 5)) {
     return res.status(400).json({ error: 'Changing quantities needs a correction reason (min 5 characters).' });
   }
-  if (!existing.isCorrection && (await findDuplicate(orgId, existing.kitchenUnitId, existing.foodItemId ?? v.foodItemId, date, v.mealType, existing.id))) {
+  if (!existing.isCorrection && (await findDuplicate(orgId, v.kitchenUnitId, v.foodItemId, date, v.mealType, existing.id))) {
     return res.status(409).json({ error: 'Another record already covers this date, kitchen, food item, and meal.' });
   }
   const record = await prisma.dailyFoodRecord.update({
     where: { id: existing.id },
     data: {
       date,
+      kitchenUnitId: v.kitchenUnitId,
+      foodItemId: v.foodItemId,
       mealType: v.mealType,
       targetKg: v.targetKg ?? null,
       preparedKg: v.producedKg,

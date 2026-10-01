@@ -16,6 +16,8 @@ interface FlowRecord {
   id: string;
   date: string;
   mealType: string;
+  kitchenUnitId: string | null;
+  foodItemId: string | null;
   targetKg: number | null;
   preparedKg: number;
   servedKg: number;
@@ -27,7 +29,7 @@ interface FlowRecord {
   correctionReason: string | null;
   notes: string | null;
   foodItem?: FoodItem | null;
-  kitchenUnit?: { name: string } | null;
+  kitchenUnit?: { id?: string; name: string } | null;
 }
 
 const input = 'mt-1 w-full rounded-lg border border-stone-300 px-3 py-2';
@@ -113,6 +115,8 @@ export function FoodData() {
   function startEdit(r: FlowRecord) {
     setEditingId(r.id);
     setFDate(new Date(r.date).toISOString().slice(0, 10));
+    setFKitchen(r.kitchenUnitId ?? r.kitchenUnit?.id ?? '');
+    setFFood(r.foodItemId ?? '');
     setFMeal(r.mealType);
     setFTarget(r.targetKg?.toString() ?? '');
     setFProduced(String(r.preparedKg));

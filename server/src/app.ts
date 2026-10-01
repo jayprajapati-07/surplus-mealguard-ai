@@ -43,7 +43,7 @@ export function createApp() {
         ) {
           return callback(null, true);
         }
-        return callback(null, true);
+        return callback(new Error('Not allowed by CORS.'));
       },
       credentials: true,
     })
@@ -62,13 +62,13 @@ export function createApp() {
   app.use('/api', limiter);
 
   // Stricter brute-force protection on authentication endpoints (local prototype values; relaxed in test/dev).
-  const authMax = process.env.NODE_ENV === 'test' ? 10000 : Number(process.env.RATE_LIMIT_AUTH_MAX ?? 5000);
+  const authMax = process.env.NODE_ENV === 'test' ? 10000 : Number(process.env.RATE_LIMIT_AUTH_MAX ?? 30);
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: authMax,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.headers['x-test-suite'] === 'true' || process.env.NODE_ENV === 'test',
+    skip: (req) => process.env.NODE_ENV === 'test',
     message: { error: 'Too many authentication attempts. Please wait 15 minutes and try again.' },
   });
   app.use('/api/auth/login', authLimiter);
