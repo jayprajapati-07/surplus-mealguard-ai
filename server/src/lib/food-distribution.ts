@@ -18,6 +18,16 @@ export const AUTO_NGO_LIMIT = 10;
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
+/**
+ * Stable identity for one hotel + kitchen + day distribution event.
+ * Regenerations reuse the same key, so the assessment (and its send history)
+ * is found again instead of duplicating NGO emails.
+ */
+export function distributionKeyFor(organizationId: string, kitchenUnitId: string | null, dateKey: string): string {
+  const safe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+  return `auto:${safe(organizationId)}:${safe(kitchenUnitId ?? 'nokitchen')}:${dateKey}`;
+}
+
 /** Gate: start the workflow only for positive, consistent surplus. */
 export function shouldAutoDistribute(args: { surplusKg: number; inconsistency: boolean }): {
   start: boolean; reason: string;
@@ -123,10 +133,14 @@ export async function triggerAutoDistribution(args: {
     return { started: false, reason: `Surplus ${args.surplusKg} kg is below the configured ${min} kg notification minimum.` };
   }
 
-  // One assessment per EOD report — reuse on re-runs.
-  const existing = await prisma.surplusEligibilityAssessment.findFirst({
+  // One assessment per EOD report — reuse on re-runs and regenerations
+  // (stable distribution key; legacy eodReportId match as fallback).
+  const distKey = distributionKeyFor(args.organizationId, args.kitchenUnitId, args.dateLabel);
+  const existing = (await prisma.surplusEligibilityAssessment.findFirst({
+    where: { organizationId: args.organizationId, recordedInfoJson: { contains: distKey } },
+  })) ?? (await prisma.surplusEligibilityAssessment.findFirst({
     where: { organizationId: args.organizationId, recordedInfoJson: { contains: args.eodReportId } },
-  });
+  }));
   let assessment = existing;
   if (!assessment) {
     const availableUntil = new Date(Date.now() + 20 * 3600 * 1000).toISOString();
@@ -141,7 +155,7 @@ export async function triggerAutoDistribution(args: {
         foodDescription: `EOD surplus ${args.dateLabel} (${args.kitchenName})`,
         quantityKg: args.surplusKg,
         recordedInfoJson: JSON.stringify({
-          auto: true, eodReportId: args.eodReportId, verdict,
+          auto: true, eodReportId: args.eodReportId, distributionKey: distKey, verdict,
           foodCategory: 'Mixed Surplus Food', availableUntil, minQuantityKg: min,
         }),
         // Operational matrix only — human sensory confirmation outstanding.
@@ -268,4 +282,4 @@ export async function triggerAutoDistribution(args: {
   return { started: true, reason: gate.reason, assessmentId: assessment.id, results };
 }
 
-export default { shouldAutoDistribute, isMailableNgo, buildSurplusEmail, selectTopNgos, triggerAutoDistribution, AUTO_MIN_QTY_DEFAULT, AUTO_NGO_LIMIT };
+export default { shouldAutoDistribute, isMailableNgo, buildSurplusEmail, selectTopNgos, distributionKeyFor, triggerAutoDistribution, AUTO_MIN_QTY_DEFAULT, AUTO_NGO_LIMIT };

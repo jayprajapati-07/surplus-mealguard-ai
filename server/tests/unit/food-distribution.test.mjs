@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fd from '../../src/lib/food-distribution.ts';
 
-const { shouldAutoDistribute, isMailableNgo, buildSurplusEmail, selectTopNgos } = fd;
+const { shouldAutoDistribute, isMailableNgo, buildSurplusEmail, selectTopNgos, distributionKeyFor } = fd;
 
 describe('shouldAutoDistribute', () => {
   it('starts only when surplus is positive and data is consistent', () => {
@@ -55,6 +55,21 @@ describe('buildSurplusEmail', () => {
     const { subject, text } = buildSurplusEmail(input);
     assert.ok(!/\[.+\]/.test(subject), 'subject has placeholders');
     assert.ok(!/\[Hotel|\[NGO|\[X kg|\[Date|\[Location/.test(text), 'body has placeholders');
+  });
+});
+
+describe('distributionKeyFor', () => {
+  it('is stable per hotel, kitchen and day', () => {
+    const a = distributionKeyFor('org1', 'kit1', '2026-10-02');
+    const b = distributionKeyFor('org1', 'kit1', '2026-10-02');
+    assert.equal(a, b);
+    assert.match(a, /org1/);
+    assert.match(a, /2026-10-02/);
+  });
+
+  it('differs across days and kitchens', () => {
+    assert.notEqual(distributionKeyFor('org1', 'kit1', '2026-10-02'), distributionKeyFor('org1', 'kit1', '2026-10-03'));
+    assert.notEqual(distributionKeyFor('org1', 'kit1', '2026-10-02'), distributionKeyFor('org1', 'kit2', '2026-10-02'));
   });
 });
 

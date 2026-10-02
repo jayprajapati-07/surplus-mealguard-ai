@@ -7,6 +7,9 @@ import { dedupeToLatest } from '../lib/kitchen-memory';
 import { computeSurplus, predictionError } from '../lib/eod-report';
 import { summarizeDayReport } from '../lib/gemini-explain';
 import { triggerAutoDistribution, type AutoDistributionResult } from '../lib/food-distribution';
+import { scoreNgoMatch } from '../lib/matching';
+import { smtpConfigured } from '../lib/mailer';
+import { getSchedulerState } from '../lib/scheduler-state';
 
 const router = Router();
 router.use(requireAuth);
@@ -255,7 +258,7 @@ export interface AutoEodResult {
  * Never overwrites an existing FINAL report (manual close wins).
  */
 export async function buildAutoReport(
-  orgId: string, kitchenId: string, day: Date, next: Date, key: string
+  orgId: string, kitchenId: string, day: Date, next: Date, key: string, regenerate = false
 ): Promise<AutoEodResult> {
   const base = { organizationId: orgId, kitchenUnitId: kitchenId, date: key };
   const [kitchen, org] = await Promise.all([
@@ -271,7 +274,16 @@ export async function buildAutoReport(
   const dupe = await prisma.endOfDayReport.findFirst({
     where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next }, status: 'FINAL' },
   });
-  if (dupe) return { ...base, ...names, status: 'skipped-exists', reportId: dupe.id };
+  if (dupe && !regenerate) return { ...base, ...names, status: 'skipped-exists', reportId: dupe.id };
+  if (dupe && regenerate) {
+    // Regeneration keeps history: the previous FINAL is preserved as REOPENED,
+    // and a fresh FINAL row is created below. NGO emails stay idempotent via
+    // the stable distribution key (already-sent NGOs are never resent).
+    await prisma.endOfDayReport.update({
+      where: { id: dupe.id },
+      data: { status: 'REOPENED', reopenedAt: new Date(), reopenReason: 'Regenerated — superseded by a newer report.' },
+    });
+  }
 
   const produced = totals.preparedKg;
   const sold = totals.soldKg;
@@ -367,7 +379,7 @@ export async function buildAutoReport(
 }
 
 /** Run the after-10PM sweep for every kitchen with records that day. One bad kitchen never blocks the rest. */
-export async function runAutoEodAll(dateISO?: string, onlyOrgId?: string): Promise<{ date: string; results: AutoEodResult[] }> {
+export async function runAutoEodAll(dateISO?: string, onlyOrgId?: string, opts?: { regenerate?: boolean }): Promise<{ date: string; results: AutoEodResult[] }> {
   const ref = dateISO ? new Date(dateISO) : new Date();
   const day = Number.isNaN(ref.getTime())
     ? (() => { const n = new Date(); return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())); })()
@@ -384,7 +396,7 @@ export async function runAutoEodAll(dateISO?: string, onlyOrgId?: string): Promi
   const results: AutoEodResult[] = [];
   for (const c of seen.values()) {
     try {
-      results.push(await buildAutoReport(c.organizationId, c.kitchenUnitId, day, next, key));
+      results.push(await buildAutoReport(c.organizationId, c.kitchenUnitId, day, next, key, opts?.regenerate ?? false));
     } catch (e) {
       results.push({
         organizationId: c.organizationId, organizationName: '', kitchenUnitId: c.kitchenUnitId,
@@ -425,6 +437,350 @@ router.post('/auto-run', requireRole(...MANAGE_ROLES), async (req: Authenticated
   } catch {
     return res.status(500).json({ error: 'Auto-report sweep failed. Please try again.' });
   }
+});
+
+// POST /api/eod/generate-now — manual "Generate Report Now" button.
+// Calls the SAME runAutoEodAll service as the 10 PM scheduler; it never
+// touches the scheduler itself. Existing FINAL reports are never duplicated:
+// without regenerate:true the caller gets an already-generated response.
+router.post('/generate-now', requireRole(...MANAGE_ROLES), async (req: AuthenticatedRequest, res) => {
+  const schema = z.object({ date: z.string().optional(), regenerate: z.coerce.boolean().optional().default(false) });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success) return zodError(res, parsed.error);
+  if (parsed.data.date && isNaN(new Date(parsed.data.date).getTime())) {
+    return res.status(400).json({ error: 'Date is not valid (use YYYY-MM-DD).' });
+  }
+  const me = await prisma.user.findUnique({ where: { id: req.userId! } });
+  if (!me) return res.status(401).json({ error: 'Account not found.' });
+  const onlyOrg = me.role === 'SUPER_ADMIN' && !me.organizationId ? undefined : me.organizationId ?? undefined;
+  if (!me.organizationId && me.role !== 'SUPER_ADMIN') {
+    return res.status(404).json({ error: 'No organization yet. Please complete onboarding first.' });
+  }
+  try {
+    const out = await runAutoEodAll(parsed.data.date, onlyOrg, { regenerate: parsed.data.regenerate });
+    const alreadyGenerated = out.results.length > 0 && out.results.every((r) => r.status === 'skipped-exists');
+    await audit('eod.generate-now', {
+      userId: req.userId, organizationId: onlyOrg, entityType: 'EndOfDayReport', entityId: out.date,
+      metadata: { date: out.date, regenerate: parsed.data.regenerate, alreadyGenerated },
+    });
+    return res.json({
+      alreadyGenerated,
+      message: alreadyGenerated
+        ? `Today's report has already been generated for ${out.date}.`
+        : `Report ready for ${out.date}: ${out.results.filter((r) => r.status === 'created').length} created.`,
+      date: out.date,
+      results: out.results.map((r) => ({
+        kitchenName: r.kitchenName, status: r.status, reportId: r.reportId ?? null,
+        surplusKg: r.surplusKg ?? null, inconsistency: r.inconsistency ?? false,
+        distribution: r.distribution ? {
+          started: r.distribution.started, reason: r.distribution.reason,
+          assessmentId: r.distribution.assessmentId ?? null,
+          sent: (r.distribution.results ?? []).filter((x) => x.status === 'sent').length,
+          failed: (r.distribution.results ?? []).filter((x) => x.status === 'failed').length,
+        } : null,
+        error: r.error ?? null,
+      })),
+    });
+  } catch {
+    return res.status(500).json({ error: 'Report generation failed. Please check today’s food records and try again.' });
+  }
+});
+
+// GET /api/eod/distribution-overview?kitchenUnitId=&date= — one snapshot for the
+// Food Distribution dashboard: today's actuals, report, distribution, NGO
+// directory with live email states, automation heartbeat, history, activity.
+// All read-only; match scores are computed in memory (never persisted here).
+router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: AuthenticatedRequest, res) => {
+  const schema = z.object({ kitchenUnitId: z.string().min(1, 'Please choose a kitchen.'), date: z.string().optional() });
+  const parsed = schema.safeParse(req.query);
+  if (!parsed.success) return zodError(res, parsed.error);
+  const orgId = await orgIdFor(req, res);
+  if (!orgId) return;
+  const kitchen = await prisma.kitchenUnit.findFirst({ where: { id: parsed.data.kitchenUnitId, organizationId: orgId } });
+  if (!kitchen) return res.status(404).json({ error: 'Kitchen not found in your organization.' });
+  const org = await prisma.organization.findUnique({ where: { id: orgId } });
+  if (!org) return res.status(500).json({ error: 'Organization not found.' });
+
+  const ref = parsed.data.date ? new Date(parsed.data.date) : new Date();
+  const day = new Date(Date.UTC(
+    Number.isNaN(ref.getTime()) ? new Date().getUTCFullYear() : ref.getUTCFullYear(),
+    Number.isNaN(ref.getTime()) ? new Date().getUTCMonth() : ref.getUTCMonth(),
+    Number.isNaN(ref.getTime()) ? new Date().getUTCDate() : ref.getUTCDate()
+  ));
+  const next = new Date(day.getTime() + 86400000);
+  const key = day.toISOString().slice(0, 10);
+
+  const safeJson = (raw: string | null): Record<string, unknown> | null => {
+    if (!raw) return null;
+    try {
+      const v = JSON.parse(raw) as unknown;
+      return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // — Today's actuals (database only) —
+  const { rows, totals } = await dayAggregate(orgId, kitchen.id, day, next);
+  const produced = totals.preparedKg;
+  const sold = totals.soldKg;
+  const waste = totals.wasteKg;
+  const surplus = computeSurplus(produced, sold);
+  const targets = await prisma.productionTarget.findMany({
+    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next } },
+    take: 500,
+  });
+  const predicted = targets.length > 0 ? r3(targets.reduce((x, t) => x + (t.adjustedKg ?? t.recommendedKg), 0)) : null;
+
+  // — Today's report (if generated) —
+  const reportRow = await prisma.endOfDayReport.findFirst({
+    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next } },
+    orderBy: { createdAt: 'desc' },
+  });
+  const reportAccuracy = reportRow ? safeJson(reportRow.accuracyJson) : null;
+  const distPayload = reportAccuracy?.distribution as {
+    started?: boolean; reason?: string; assessmentId?: string;
+    results?: { ngoId: string; ngoName: string; email: string; status: string; error?: string }[];
+  } | undefined;
+  const assessmentId = distPayload?.assessmentId ?? null;
+
+  // — Today's matches + records (live states) —
+  const matches = assessmentId
+    ? await prisma.ngoMatch.findMany({ where: { assessmentId }, include: { ngo: true } })
+    : [];
+  const distRecords = assessmentId
+    ? await prisma.redistributionRecord.findMany({
+      where: { assessmentId },
+      include: { ngo: { select: { id: true, name: true } } },
+    })
+    : [];
+  const recordByNgo = new Map(distRecords.map((r) => [r.ngoId ?? '', r]));
+  const emailStateByNgo = new Map<string, { status: string; at: string | null }>();
+  for (const m of matches) {
+    let attempts: { at: string; ok: boolean }[] = [];
+    try {
+      const v = JSON.parse(m.deliveryJson ?? '{}') as { attempts?: { at: string; ok: boolean }[] };
+      if (Array.isArray(v.attempts)) attempts = v.attempts;
+    } catch { /* none */ }
+    const rec = recordByNgo.get(m.ngoId);
+    let status = 'not-contacted';
+    let at: string | null = null;
+    if (rec && ['ACCEPTED', 'PICKUP_SCHEDULED', 'HANDED_OVER', 'COMPLETED'].includes(rec.status)) status = 'accepted';
+    else if (rec && ['DECLINED', 'CANCELLED'].includes(rec.status)) status = 'rejected';
+    else if (attempts.length > 0) {
+      const last = attempts[attempts.length - 1];
+      status = last.ok ? 'sent' : 'failed';
+      at = last.at;
+    } else if (rec) status = 'pending';
+    emailStateByNgo.set(m.ngoId, { status, at });
+  }
+  const sent = [...emailStateByNgo.values()].filter((e) => e.status === 'sent').length;
+  const failed = [...emailStateByNgo.values()].filter((e) => e.status === 'failed').length;
+  const pending = [...emailStateByNgo.values()].filter((e) => e.status === 'pending').length;
+  const accepted = [...emailStateByNgo.values()].filter((e) => e.status === 'accepted').length;
+  const acceptedKg = r3(distRecords
+    .filter((r) => ['ACCEPTED', 'PICKUP_SCHEDULED', 'HANDED_OVER', 'COMPLETED'].includes(r.status))
+    .reduce((x, r) => x + r.quantityKg, 0));
+  const distributionStatus = surplus.inconsistency
+    ? 'Needs review — inconsistent data'
+    : rows.length === 0
+      ? 'No food records today'
+      : !reportRow
+        ? 'Report not generated yet'
+        : failed > 0
+          ? `Distribution in progress — ${failed} email${failed === 1 ? '' : 's'} need retry`
+          : accepted > 0 || sent > 0
+            ? 'Distribution in progress'
+            : surplus.surplusKg > 0
+              ? 'Surplus ready — distribution pending'
+              : 'No surplus today';
+
+  // — NGO directory (registry + today's live state; scores computed, not stored) —
+  const registry = await prisma.ngoOrganization.findMany({ orderBy: { name: 'asc' } });
+  const institution = { city: org.city, address: org.address, operatingHours: org.operatingHours };
+  const need = {
+    quantityKg: surplus.surplusKg,
+    foodCategory: 'Mixed Surplus Food',
+    availableUntil: new Date(Date.now() + 20 * 3600 * 1000).toISOString(),
+  };
+  const matchByNgo = new Map(matches.map((m) => [m.ngoId, m]));
+  const ngos = registry.map((n) => {
+    const scored = surplus.surplusKg > 0
+      ? scoreNgoMatch({
+        ngo: {
+          isActive: n.isActive, city: n.city, address: n.address,
+          acceptedCategories: n.acceptedCategories, pickupCapable: n.pickupCapable,
+          operatingHours: n.operatingHours, capacityKg: n.capacityKg,
+        },
+        assessment: need, institution,
+      })
+      : null;
+    const stored = matchByNgo.get(n.id);
+    let storedReasons: { criterion: string; points: number; detail: string }[] = [];
+    try {
+      const v = JSON.parse(stored?.reasonsJson ?? '[]') as typeof storedReasons;
+      if (Array.isArray(v)) storedReasons = v;
+    } catch { /* none */ }
+    const reasons = storedReasons.length > 0 ? storedReasons : (scored?.reasons ?? []);
+    const cat = reasons.find((x) => x.criterion === 'category');
+    const area = reasons.find((x) => x.criterion === 'area');
+    const email = emailStateByNgo.get(n.id) ?? { status: 'not-contacted', at: null };
+    return {
+      id: n.id, name: n.name, city: n.city, address: n.address,
+      contactEmail: n.contactEmail, contactPhone: n.contactPhone, isActive: n.isActive,
+      sameCity: (area?.points ?? 0) > 0,
+      acceptance: reasons.length === 0 ? 'unknown' : (cat && cat.points > 0 ? 'accepting' : 'not-accepting'),
+      matchScore: stored?.score ?? scored?.score ?? null,
+      emailStatus: email.status, lastContact: email.at,
+    };
+  });
+
+  // — Automation heartbeat (real state only) —
+  const sched = getSchedulerState();
+  const lastAutoReport = await prisma.endOfDayReport.findFirst({
+    where: { organizationId: orgId, status: 'FINAL' },
+    orderBy: { createdAt: 'desc' },
+  });
+  const sweepAudits = await prisma.auditLog.findMany({
+    where: { action: 'eod.scheduler-run' },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+  });
+  const sweepMeta = (a: { metadataJson: string | null }) => {
+    try {
+      return JSON.parse(a.metadataJson ?? '{}') as { date?: string; created?: number; failed?: number; errors?: string[] };
+    } catch {
+      return {};
+    }
+  };
+  const lastSuccessAudit = sweepAudits.find((a) => (sweepMeta(a).failed ?? 0) === 0);
+  const lastFailureAudit = sweepAudits.find((a) => (sweepMeta(a).failed ?? 0) > 0);
+  const lastSuccessAt = lastSuccessAudit?.createdAt?.toISOString() ?? null;
+  const lastFailureAt = lastFailureAudit?.createdAt?.toISOString() ?? null;
+  const lastFailureReason = lastFailureAudit ? (sweepMeta(lastFailureAudit).errors ?? []).join('; ').slice(0, 300) || 'Sweep reported failures.' : null;
+  const lastEmailNote = await prisma.notification.findFirst({
+    where: { organizationId: orgId, type: { startsWith: 'NGO_NOTIFY_' } },
+    orderBy: { createdAt: 'desc' },
+  });
+  const automationState = !sched.armed && !lastSuccessAt && !lastAutoReport
+    ? 'unknown'
+    : (sched.lastError || (lastFailureAt && (!lastSuccessAt || lastFailureAt > lastSuccessAt)))
+      ? 'attention'
+      : 'healthy';
+  const automation = {
+    state: automationState,
+    schedulerArmed: sched.armed,
+    nextRun: sched.nextRunISO,
+    lastRun: lastAutoReport ? { at: lastAutoReport.createdAt, date: lastAutoReport.date.toISOString().slice(0, 10) } : null,
+    lastSuccess: lastSuccessAt ? { at: lastSuccessAt, ...(sweepMeta(lastSuccessAudit as { metadataJson: string | null })) } : null,
+    lastFailure: lastFailureAt ? { at: lastFailureAt, reason: lastFailureReason } : null,
+    emailService: {
+      configured: smtpConfigured(),
+      lastEmail: lastEmailNote ? { at: lastEmailNote.createdAt, type: lastEmailNote.type } : null,
+    },
+  };
+
+  // — History (latest FINAL reports with distribution counts) —
+  const historyRows = await prisma.endOfDayReport.findMany({
+    where: { organizationId: orgId, status: 'FINAL' },
+    orderBy: { date: 'desc' },
+    take: 30,
+    include: { kitchenUnit: { select: { name: true } } },
+  });
+  const history = historyRows.map((h) => {
+    const acc = safeJson(h.accuracyJson) as {
+      predictedKg?: number | null; surplusKg?: number; autoGenerated?: boolean;
+      inconsistency?: boolean;
+      distribution?: { results?: { status: string }[] };
+      summary?: { text?: string };
+    } | null;
+    const res = acc?.distribution?.results ?? [];
+    const hSent = res.filter((x) => x.status === 'sent').length;
+    const hFailed = res.filter((x) => x.status === 'failed').length;
+    return {
+      id: h.id, date: h.date.toISOString().slice(0, 10), kitchen: h.kitchenUnit?.name ?? '—',
+      createdAt: h.createdAt, status: h.status,
+      predictedKg: acc?.predictedKg ?? null,
+      producedKg: h.totalPreparedKg, soldKg: h.totalServedKg, wasteKg: h.totalWasteKg,
+      surplusKg: acc?.surplusKg ?? h.totalSurplusKg,
+      inconsistency: acc?.inconsistency ?? false,
+      autoGenerated: acc?.autoGenerated ?? false,
+      contacted: res.length, sent: hSent, failed: hFailed,
+      summary: acc?.summary && typeof acc.summary === 'object' ? (acc.summary.text ?? null) : null,
+      overall: (acc?.inconsistency ?? false)
+        ? 'Needs review'
+        : hFailed > 0 ? `${hFailed} failed` : res.length > 0 ? 'Completed' : (acc?.surplusKg ?? 0) > 0 ? 'No distribution' : 'No surplus',
+    };
+  });
+
+  // — Recent activity (latest reports + distribution events) —
+  type Activity = { at: string; tone: 'ok' | 'bad' | 'idle'; text: string };
+  const activity: Activity[] = [];
+  const recentForActivity = historyRows.slice(0, 5);
+  const assessIds = recentForActivity
+    .map((h) => (safeJson(h.accuracyJson) as { distribution?: { assessmentId?: string } } | null)?.distribution?.assessmentId)
+    .filter((x): x is string => !!x);
+  const [assessRows, activityMatches] = await Promise.all([
+    assessIds.length > 0
+      ? prisma.surplusEligibilityAssessment.findMany({ where: { id: { in: assessIds } } })
+      : Promise.resolve([]),
+    assessIds.length > 0
+      ? prisma.ngoMatch.findMany({ where: { assessmentId: { in: assessIds } }, include: { ngo: { select: { name: true } } } })
+      : Promise.resolve([]),
+  ]);
+  for (const h of recentForActivity) {
+    const hk = h.date.toISOString().slice(0, 10);
+    const hAcc = safeJson(h.accuracyJson) as { surplusKg?: number; inconsistency?: boolean } | null;
+    activity.push({
+      at: h.createdAt.toISOString(),
+      tone: hAcc?.inconsistency ? 'bad' : 'ok',
+      text: `Daily report generated — ${h.kitchenUnit?.name ?? ''} ${hk} (${hAcc?.surplusKg ?? h.totalSurplusKg} kg surplus)`,
+    });
+  }
+  for (const a of assessRows) {
+    activity.push({ at: a.createdAt.toISOString(), tone: 'ok', text: `${a.quantityKg} kg surplus detected — NGOs matched` });
+  }
+  for (const m of activityMatches) {
+    let attempts: { at: string; ok: boolean; error?: string }[] = [];
+    try {
+      const v = JSON.parse(m.deliveryJson ?? '{}') as { attempts?: typeof attempts };
+      if (Array.isArray(v.attempts)) attempts = v.attempts;
+    } catch { /* none */ }
+    for (const att of attempts) {
+      activity.push({
+        at: att.at, tone: att.ok ? 'ok' : 'bad',
+        text: att.ok ? `Email sent to ${m.ngo.name}` : `Email to ${m.ngo.name} failed${att.error ? ` — ${att.error.slice(0, 120)}` : ''}`,
+      });
+    }
+  }
+  activity.sort((a, b) => (a.at < b.at ? 1 : -1));
+
+  return res.json({
+    date: key,
+    kitchen: { id: kitchen.id, name: kitchen.name },
+    hotel: { name: org.name, city: org.city },
+    today: {
+      hasRecords: rows.length > 0, records: rows.length,
+      producedKg: produced, soldKg: sold, wasteKg: waste,
+      surplusKg: surplus.surplusKg, inconsistency: surplus.inconsistency,
+      inconsistencyMessage: surplus.message, predictedKg: predicted,
+    },
+    report: reportRow ? {
+      id: reportRow.id, status: reportRow.status, createdAt: reportRow.createdAt,
+      autoGenerated: (reportAccuracy?.autoGenerated as boolean | undefined) ?? false,
+      summary: (reportAccuracy?.summary as { text?: string } | undefined)?.text ?? reportRow.qualityNotes,
+    } : null,
+    distribution: {
+      started: distPayload?.started ?? false, reason: distPayload?.reason ?? null,
+      assessmentId, matched: matches.length, sent, pending, failed, accepted,
+      acceptedKg, remainingKg: r3(Math.max(0, surplus.surplusKg - acceptedKg)),
+      status: distributionStatus,
+    },
+    ngos,
+    automation,
+    history,
+    activity: activity.slice(0, 20),
+  });
 });
 
 export default router;
