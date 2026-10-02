@@ -1,11 +1,12 @@
 // Configurable email adapter. Truthfulness contract:
-// - SMTP_HOST absent  -> simulated local delivery (never labeled "sent").
-// - SMTP_HOST present -> real nodemailer attempt; ok/error recorded exactly.
+// - RESEND_API_KEY present -> real Resend API attempt; ok/error recorded exactly.
+// - else SMTP_HOST present  -> real nodemailer attempt; ok/error recorded exactly.
+// - else                     -> simulated local delivery (never labeled "sent").
 import nodemailer from 'nodemailer';
 
 export interface MailAttempt {
   at: string;
-  channel: 'simulated' | 'smtp';
+  channel: 'simulated' | 'smtp' | 'resend';
   ok: boolean;
   error?: string;
 }
@@ -16,12 +17,55 @@ export interface MailPayload {
   text: string;
 }
 
+export function resendConfigured(): boolean {
+  return !!(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.trim());
+}
+
 export function smtpConfigured(): boolean {
   return !!(process.env.SMTP_HOST && process.env.SMTP_HOST.trim());
 }
 
+function senderAddress(): string {
+  return process.env.RESEND_FROM ?? process.env.SMTP_FROM ?? 'mealguard@localhost';
+}
+
+async function sendViaResend(p: MailPayload, at: string): Promise<MailAttempt> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    let res: Response;
+    try {
+      res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY as string}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ from: senderAddress(), to: p.to, subject: p.subject, text: p.text }),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) {
+      let detail = `Resend API rejected the send (HTTP ${res.status}).`;
+      try {
+        const data = (await res.json()) as { message?: string; name?: string };
+        if (data?.message) detail = `Resend: ${data.message}`;
+      } catch { /* keep generic detail */ }
+      return { at, channel: 'resend', ok: false, error: detail };
+    }
+    return { at, channel: 'resend', ok: true };
+  } catch (err) {
+    return { at, channel: 'resend', ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function sendMail(p: MailPayload): Promise<MailAttempt> {
   const at = new Date().toISOString();
+  if (resendConfigured()) {
+    return sendViaResend(p, at);
+  }
   if (!smtpConfigured()) {
     return { at, channel: 'simulated', ok: true };
   }
@@ -47,3 +91,5 @@ export async function sendMail(p: MailPayload): Promise<MailAttempt> {
     return { at, channel: 'smtp', ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+export default { smtpConfigured, resendConfigured, sendMail };

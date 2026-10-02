@@ -8,7 +8,7 @@ import { computeSurplus, predictionError } from '../lib/eod-report';
 import { summarizeDayReport } from '../lib/gemini-explain';
 import { triggerAutoDistribution, type AutoDistributionResult } from '../lib/food-distribution';
 import { scoreNgoMatch } from '../lib/matching';
-import { smtpConfigured } from '../lib/mailer';
+import { smtpConfigured, resendConfigured } from '../lib/mailer';
 import { getSchedulerState } from '../lib/scheduler-state';
 
 const router = Router();
@@ -675,7 +675,8 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
     lastSuccess: lastSuccessAt ? { at: lastSuccessAt, ...(sweepMeta(lastSuccessAudit as { metadataJson: string | null })) } : null,
     lastFailure: lastFailureAt ? { at: lastFailureAt, reason: lastFailureReason } : null,
     emailService: {
-      configured: smtpConfigured(),
+      configured: smtpConfigured() || resendConfigured(),
+      provider: resendConfigured() ? 'resend' : smtpConfigured() ? 'smtp' : null,
       lastEmail: lastEmailNote ? { at: lastEmailNote.createdAt, type: lastEmailNote.type } : null,
     },
   };

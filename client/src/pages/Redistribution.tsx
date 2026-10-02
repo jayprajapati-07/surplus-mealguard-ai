@@ -81,7 +81,7 @@ interface OverviewAutomation {
   lastRun: { at: string; date: string } | null;
   lastSuccess: { at: string } | null;
   lastFailure: { at: string; reason: string | null } | null;
-  emailService: { configured: boolean; lastEmail: { at: string; type: string } | null };
+  emailService: { configured: boolean; provider?: string | null; lastEmail: { at: string; type: string } | null };
 }
 interface Overview {
   date: string; kitchen: { id: string; name: string }; hotel: { name: string; city: string };
@@ -413,7 +413,7 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
               <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
                 <dt className="text-gray-500">Email Service</dt>
                 <dd className="font-bold text-[#0C2741]">
-                  {ov.automation.emailService.configured ? '✓ Operational' : '◷ Logging locally (no email server configured)'}
+                  {ov.automation.emailService.configured ? `✓ Operational${ov.automation.emailService.provider ? ` via ${ov.automation.emailService.provider.toUpperCase()}` : ''}` : '◷ Logging locally (no email server configured)'}
                 </dd>
               </div>
               <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
@@ -675,7 +675,7 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
               <ul className="mt-3 space-y-1.5 text-xs">
                 {notifyResult.map((x) => (
                   <li key={x.ngoId} className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-2.5">
-                    {x.ngoId.slice(-6)}: {x.channel !== 'smtp' ? 'simulated local delivery (no email was sent)' : `SMTP attempt ${x.ok ? 'delivered' : 'failed'}`}
+                    {x.ngoId.slice(-6)}: {x.channel === 'simulated' ? 'simulated local delivery (no email was sent)' : `Attempt via ${x.channel.toUpperCase()} ${x.ok ? 'delivered' : 'failed'}`}
                     {x.error && <span className="text-red-700 font-bold"> — {x.error}</span>}
                   </li>
                 ))}
