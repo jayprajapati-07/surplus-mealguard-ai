@@ -3,7 +3,7 @@ import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import nd from '../../src/lib/ngo-discovery.ts';
 
-const { haversineKm, keywordRelevance, inferAcceptance, isCandidate, rankScore, extractEmailsFromHtml, dedupeByPlaceId, fetchWebsiteContacts, classifyRelevance } = nd;
+const { haversineKm, keywordRelevance, inferAcceptance, isCandidate, rankScore, extractEmailsFromHtml, extractPhonesFromHtml, isExcludedPlace, dedupeNearbyByName, dedupeByPlaceId, fetchWebsiteContacts, fetchContactDetails, classifyRelevance } = nd;
 const realFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -123,6 +123,56 @@ describe('classifyRelevance', () => {
       if (prev !== undefined) process.env.GEMINI_API_KEY = prev;
       else delete process.env.GEMINI_API_KEY;
     }
+  });
+});
+
+describe('extractPhonesFromHtml', () => {
+  it('finds tel links and Indian-format numbers, skipping junk', () => {
+    const html = '<a href="tel:+917926305082">call</a> 07926303346 hit 12345 times, year 2026';
+    const out = extractPhonesFromHtml(html);
+    assert.ok(out.includes('+917926305082'));
+    assert.ok(out.some((p) => p.replace(/\D/g, '').endsWith('7926303346')));
+    assert.ok(!out.some((p) => p === '12345' || p === '2026'));
+  });
+});
+
+describe('isExcludedPlace', () => {
+  it('excludes hospitals, schools and banks without charity signals', () => {
+    assert.equal(isExcludedPlace('Abhyankar Nursing Home', ['healthcare', 'nursing_home']), true);
+    assert.equal(isExcludedPlace('City Public School', ['school']), true);
+    assert.equal(isExcludedPlace('Helping Hands Kitchen', ['office=charity']), false);
+    assert.equal(isExcludedPlace('Seva Hospital Charity Kitchen', ['hospital']), false);
+  });
+});
+
+describe('dedupeNearbyByName', () => {
+  it('merges same-name places within range, filling missing contacts', () => {
+    const out = dedupeNearbyByName([
+      { placeId: 'a', name: 'Nirant', lat: 23.0, lng: 72.0, phone: null, email: null },
+      { placeId: 'b', name: 'nirant ', lat: 23.0005, lng: 72.0005, phone: '+91111', email: 'a@b.org' },
+      { placeId: 'c', name: 'Nirant 2', lat: 23.0, lng: 72.0, phone: null, email: null },
+    ], 300);
+    assert.equal(out.length, 2);
+    const kept = out.find((p) => p.placeId === 'a');
+    assert.equal(kept?.phone, '+91111');
+    assert.equal(kept?.email, 'a@b.org');
+  });
+});
+
+describe('fetchContactDetails', () => {
+  it('checks homepage then contact pages until an email is found', async () => {
+    const hits = [];
+    globalThis.fetch = (async (url) => {
+      hits.push(String(url));
+      if (String(url).endsWith('/contact')) {
+        return { ok: true, status: 200, headers: { get: () => 'text/html' }, text: async () => 'mail us at care@realngo.org or +91 98765 43210' };
+      }
+      return { ok: true, status: 200, headers: { get: () => 'text/html' }, text: async () => '<html>welcome</html>' };
+    });
+    const out = await fetchContactDetails('https://realngo.org');
+    assert.ok(out.emails.includes('care@realngo.org'));
+    assert.ok(out.phones.some((p) => p.replace(/\D/g, '').endsWith('9876543210')));
+    assert.ok(hits.some((u) => u.includes('/contact')));
   });
 });
 

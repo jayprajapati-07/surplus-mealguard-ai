@@ -164,4 +164,17 @@ export async function geocodeHotelAddress(parts: {
   return null;
 }
 
-export default { geocodeNominatim, geocodeHotelAddress, searchOverpassCharities };
+/** Coordinates → display address via Nominatim reverse. Null on failure. */
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  try {
+    const url = `${NOMINATIM_URL.replace('/search', '/reverse')}?format=jsonv2&lat=${lat}&lon=${lng}`;
+    const res = await timedFetch(url, { headers: { ...UA, Accept: 'application/json' } }, 12000);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { display_name?: string };
+    return typeof data.display_name === 'string' && data.display_name ? data.display_name : null;
+  } catch {
+    return null;
+  }
+}
+
+export default { geocodeNominatim, geocodeHotelAddress, reverseGeocode, searchOverpassCharities };

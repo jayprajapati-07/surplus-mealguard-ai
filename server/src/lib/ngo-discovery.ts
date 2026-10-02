@@ -117,9 +117,78 @@ export function dedupeByPlaceId<T extends { placeId: string }>(places: T[]): T[]
   return [...seen.values()];
 }
 
+/** Extract callable phone numbers: tel: links plus international-format digit runs. */
+export function extractPhonesFromHtml(html: string): string[] {
+  const found = new Set<string>();
+  for (const m of html.match(/tel:([+\d][\d\s\-().]{6,20})/gi) ?? []) {
+    found.add(m.slice('tel:'.length).trim());
+  }
+  const digits = (s: string) => s.replace(/\D/g, '');
+  for (const m of html.match(/(?:\+?\d[\d\s\-().]{8,}\d)/g) ?? []) {
+    const d = digits(m);
+    // Plausible phone: 10-13 digits, not a year or small counter.
+    if (d.length >= 10 && d.length <= 13 && !(d.length === 10 && d.startsWith('19')) && !(d.length === 10 && d.startsWith('20'))) {
+      found.add(d.length === 10 ? `+91${d}` : m.startsWith('+') ? `+${d}` : d);
+    }
+  }
+  return [...found].slice(0, 5);
+}
+
+const EXCLUDED_KEYWORDS = [
+  'hospital', 'nursing home', 'clinic', 'doctor', 'dental', 'pharmacy',
+  'school', 'college', 'university', 'tuition', 'coaching',
+  'bank', 'atm', 'insurance',
+  'restaurant', 'hotel', 'cafe', 'cafeteria', 'canteen', 'dhaba', 'eatery',
+  'petrol', 'fuel', 'parking', 'car wash', 'salon', 'gym',
+];
+const OVERRIDE_KEYWORDS = ['food bank', 'foodbank', 'food rescue', 'langar', 'community kitchen', 'food donation', 'charity kitchen', 'seva kitchen'];
+
+/** Exclude clearly non-NGO businesses unless strong food-charity signals exist. */
+export function isExcludedPlace(name: string, types: string[]): boolean {
+  const hay = `${name} ${(types ?? []).join(' ')}`.toLowerCase();
+  if (OVERRIDE_KEYWORDS.some((k) => hay.includes(k))) return false;
+  return EXCLUDED_KEYWORDS.some((k) => hay.includes(k));
+}
+
+export interface NearbyPlace {
+  placeId: string;
+  name: string;
+  lat: number | null;
+  lng: number | null;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+}
+
+const normName = (s: string) => s.toLowerCase().trim().replace(/\s+/g, ' ');
+
+/**
+ * Merge same-name places within range, filling missing contacts from dupes.
+ * Distinct names (e.g. "Nirant" vs "Nirant 2") are never merged.
+ */
+export function dedupeNearbyByName<T extends NearbyPlace>(places: T[], maxMeters = 300): T[] {
+  const out: T[] = [];
+  for (const p of places) {
+    const hit = out.find((q) =>
+      normName(q.name) === normName(p.name) &&
+      q.lat !== null && q.lng !== null && p.lat !== null && p.lng !== null &&
+      haversineKm(q.lat, q.lng, p.lat, p.lng) * 1000 <= maxMeters
+    );
+    if (!hit) {
+      out.push(p);
+      continue;
+    }
+    if (!hit.phone && p.phone) hit.phone = p.phone;
+    if (!hit.email && p.email) hit.email = p.email;
+    if (!hit.website && p.website) hit.website = p.website;
+  }
+  return out;
+}
+
 export interface WebsiteContacts {
   reachable: boolean;
   emails: string[];
+  phones: string[];
   hasFoodEvidence: boolean;
 }
 
@@ -133,7 +202,7 @@ const FOOD_EVIDENCE = [
  * evidence. No crawling, no aggressive scraping. Unreachable → empty result.
  */
 export async function fetchWebsiteContacts(website: string): Promise<WebsiteContacts> {
-  const none: WebsiteContacts = { reachable: false, emails: [], hasFoodEvidence: false };
+  const none: WebsiteContacts = { reachable: false, emails: [], phones: [], hasFoodEvidence: false };
   let url: string;
   try {
     const u = new URL(website.startsWith('http') ? website : `https://${website}`);
@@ -161,11 +230,70 @@ export async function fetchWebsiteContacts(website: string): Promise<WebsiteCont
     return {
       reachable: true,
       emails: extractEmailsFromHtml(text).slice(0, 5),
+      phones: extractPhonesFromHtml(text),
       hasFoodEvidence: FOOD_EVIDENCE.some((k) => lower.includes(k)),
     };
   } catch {
     return none;
   }
+}
+
+async function fetchPage(url: string, ms: number): Promise<string | null> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: { 'User-Agent': 'MealGuardBot/1.0 (+contact discovery)', Accept: 'text/html' },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) return null;
+    if (!String(res.headers.get('content-type') ?? '').includes('text/html')) return null;
+    return (await res.text()).slice(0, 150000);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Contact discovery across homepage + contact pages (max 3 polite GETs, 5s
+ * each). Stops early once an email is found. Returns only real extracted data.
+ */
+export async function fetchContactDetails(website: string): Promise<WebsiteContacts> {
+  const none: WebsiteContacts = { reachable: false, emails: [], phones: [], hasFoodEvidence: false };
+  let base: string;
+  try {
+    const u = new URL(website.startsWith('http') ? website : `https://${website}`);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return none;
+    base = `${u.protocol}//${u.host}`;
+  } catch {
+    return none;
+  }
+  const emails = new Set<string>();
+  const phones = new Set<string>();
+  let reachable = false;
+  let hasFoodEvidence = false;
+  const paths = ['', '/contact', '/contact-us'];
+  for (const path of paths) {
+    const html = await fetchPage(`${base}${path}`, 5000);
+    if (html === null) continue;
+    reachable = true;
+    for (const e of extractEmailsFromHtml(html)) emails.add(e);
+    for (const p of extractPhonesFromHtml(html)) phones.add(p);
+    if (FOOD_EVIDENCE.some((k) => html.toLowerCase().includes(k))) hasFoodEvidence = true;
+    if (emails.size > 0) break;
+    if (paths.indexOf(path) >= 2) break;
+  }
+  return {
+    reachable,
+    emails: [...emails].slice(0, 5),
+    phones: [...phones].slice(0, 5),
+    hasFoodEvidence,
+  };
 }
 
 export interface RelevanceVerdict {
@@ -238,7 +366,7 @@ export async function classifyRelevance(place: {
 }
 
 export default {
-  haversineKm, keywordRelevance, inferAcceptance, isCandidate,
-  rankScore, extractEmailsFromHtml, dedupeByPlaceId,
-  fetchWebsiteContacts, classifyRelevance,
+  haversineKm, keywordRelevance, inferAcceptance, isCandidate, isExcludedPlace,
+  rankScore, extractEmailsFromHtml, extractPhonesFromHtml, dedupeByPlaceId, dedupeNearbyByName,
+  fetchWebsiteContacts, fetchContactDetails, classifyRelevance,
 };

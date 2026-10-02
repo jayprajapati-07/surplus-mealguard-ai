@@ -3,7 +3,7 @@ import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import og from '../../src/lib/open-geo.ts';
 
-const { geocodeNominatim, geocodeHotelAddress, searchOverpassCharities } = og;
+const { geocodeNominatim, geocodeHotelAddress, reverseGeocode, searchOverpassCharities } = og;
 const realFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -45,6 +45,20 @@ describe('geocodeHotelAddress', () => {
     const g = await geocodeHotelAddress({ address: 'Gota, Ahmedabad, Gujarat', city: 'Ahmedabad', state: null, country: null });
     assert.equal(g?.lat, 23.101);
     assert.ok(queries.length >= 2, 'must retry with a broader variant');
+  });
+});
+
+describe('reverseGeocode', () => {
+  it('returns a display address for coordinates', async () => {
+    globalThis.fetch = (async () => ({
+      ok: true, status: 200, json: async () => ({ display_name: 'Gota, Ahmedabad, Gujarat, India' }),
+    }));
+    assert.equal(await reverseGeocode(23.101, 72.5408), 'Gota, Ahmedabad, Gujarat, India');
+  });
+
+  it('returns null on failure instead of inventing', async () => {
+    globalThis.fetch = (async () => ({ ok: false, status: 500, json: async () => ({}) }));
+    assert.equal(await reverseGeocode(0, 0), null);
   });
 });
 

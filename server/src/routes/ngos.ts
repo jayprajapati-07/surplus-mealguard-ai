@@ -22,6 +22,7 @@ function shapeNgo(n: {
   operationalStatus: string | null; source: string; lastCheckedAt: Date | null;
   verificationStatus: string; verificationSource: string | null; ngoDarpanId: string | null;
   emailSource: string | null; emailVerified: boolean; emailLastChecked: Date | null;
+  phoneSource: string | null;
   foodAcceptanceStatus: string; acceptsCookedFood: boolean | null;
   acceptsPreparedFood: boolean | null; acceptsPackagedFood: boolean | null;
   distanceKm: number | null; relevance: string | null; relevanceReason: string | null;

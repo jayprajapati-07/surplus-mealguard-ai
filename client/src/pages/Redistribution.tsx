@@ -180,22 +180,45 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
     setDiscBusy(true);
     setDiscError('');
     setDiscMsg('');
-    const stages = ['Searching nearby organizations…', 'Reading organization details…', 'Filtering relevant organizations…', 'Verifying available information…'];
-    let i = 0;
-    setDiscStage(stages[0]);
-    const timer = window.setInterval(() => { i = Math.min(i + 1, stages.length - 1); setDiscStage(stages[i]); }, 4000);
+    setDiscStage('Starting search…');
     try {
-      const d = await api<{ message: string; places: unknown[]; radiusUsedKm: number }>(
+      // Start a background job (instant response), then poll its progress.
+      // Polls are tiny and fast, so long searches can never time out again.
+      const started = await api<{ jobId: string }>(
         '/discovery/search',
         { method: 'POST', body: JSON.stringify({ radiusKm: Number(radiusKm) || 10 }) }
       );
-      setDiscMsg(`${d.message} (searched within ${d.radiusUsedKm} km)`);
-      if (window.showToast) window.showToast('Nearby search finished');
-      await loadOverview(kitchenId);
+      const t0 = Date.now();
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const j = await api<{ job: {
+          state: 'running' | 'done' | 'failed'; stage: string;
+          searched: number; enriched: number; saved: number;
+          error?: string;
+          result?: { message: string; radiusUsedKm: number; places: unknown[]; errors: string[] };
+        } }>(`/discovery/jobs/${started.jobId}`);
+        const extra = j.job.searched > 0 ? ` · ${j.job.saved} saved so far` : '';
+        setDiscStage(`${j.job.stage}${extra}`);
+        if (j.job.state === 'done') {
+          const res = j.job.result;
+          setDiscMsg(res ? `${res.message} (searched within ${res.radiusUsedKm} km)` : 'Search finished.');
+          if (res?.errors?.length) setDiscMsg((m) => `${m} Note: ${res.errors.slice(0, 2).join('; ')}`);
+          if (window.showToast) window.showToast('Nearby search finished');
+          await loadOverview(kitchenId);
+          break;
+        }
+        if (j.job.state === 'failed') {
+          throw new Error(j.job.error || 'Search failed. Please try again.');
+        }
+        if (Date.now() - t0 > 6 * 60 * 1000) {
+          setDiscMsg('Still working in the background — this page will pick up results on Refresh.');
+          await loadOverview(kitchenId);
+          break;
+        }
+      }
     } catch (err) {
       setDiscError(err instanceof Error ? err.message : 'Unable to retrieve nearby organizations right now.');
     } finally {
-      window.clearInterval(timer);
       setDiscStage('');
       setDiscBusy(false);
     }
@@ -604,8 +627,7 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
                       {n.sameCity && <span className="ml-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">Same area as your kitchen</span>}
                     </p>
                     <p className="mt-1 text-gray-600">{n.address ?? 'Address unavailable'}</p>
-                    <p className="mt-1 text-gray-600">Phone: {n.contactPhone ?? 'Unavailable'}</p>
-                    <p className="text-gray-600">
+                    <p className="mt-1 text-gray-600">Phone: {n.contactPhone ?? 'Unavailable'}</p>                    <p className="text-gray-600">
                       Website: {n.website ? <a href={n.website} target="_blank" rel="noreferrer" className="text-[#006B48] font-semibold underline">Official website</a> : 'Unavailable'}
                     </p>
                     <p className="mt-1 text-gray-600">

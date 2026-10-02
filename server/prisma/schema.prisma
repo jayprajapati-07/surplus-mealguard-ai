@@ -360,6 +360,7 @@ model NgoOrganization {
   emailSource        String?
   emailVerified      Boolean                @default(false)
   emailLastChecked   DateTime?
+  phoneSource        String?
   // Food acceptance (never assumed from category)
   foodAcceptanceStatus String               @default("unknown")
   acceptsCookedFood    Boolean?
