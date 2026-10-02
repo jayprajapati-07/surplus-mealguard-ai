@@ -1,0 +1,796 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Surplus MealGuard AI - Main Dashboard</title>
+<!-- Inter Google Font -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Plus Jakarta Sans', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              topbar: '#004C35',
+              green: '#006B48',
+              emerald: '#059669',
+              dark: '#0C2741',
+              surface: '#F6FAF7',
+              border: '#E5ECE8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+<style data-purpose="custom-layout">
+    body {
+      background-color: #EEF5F1;
+      color: #0C2741;
+      font-family: 'Inter', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #D1DED6;
+      border-radius: 4px;
+    }
+
+    /* Choreographed Animations */
+    @keyframes slideDownHeader {
+      from {
+        opacity: 0;
+        transform: translateY(-16px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeInSidebar {
+      from {
+        opacity: 0;
+        transform: translateX(-15px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes fadeInUpStagger {
+      from {
+        opacity: 0;
+        transform: translateY(18px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes growBar {
+      from {
+        transform: scaleY(0);
+      }
+      to {
+        transform: scaleY(1);
+      }
+    }
+
+    .animate-header {
+      animation: slideDownHeader 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @media (min-width: 1024px) {
+      .animate-sidebar {
+        animation: fadeInSidebar 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+    }
+
+    .animate-card-1 {
+      opacity: 0;
+      animation: fadeInUpStagger 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.08s forwards;
+    }
+    .animate-card-2 {
+      opacity: 0;
+      animation: fadeInUpStagger 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.16s forwards;
+    }
+    .animate-card-3 {
+      opacity: 0;
+      animation: fadeInUpStagger 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.24s forwards;
+    }
+    .animate-section-1 {
+      opacity: 0;
+      animation: fadeInUpStagger 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.32s forwards;
+    }
+    .animate-section-2 {
+      opacity: 0;
+      animation: fadeInUpStagger 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.4s forwards;
+    }
+
+    .chart-bar-anim {
+      transform-origin: bottom;
+      animation: growBar 0.9s cubic-bezier(0.34, 1.4, 0.64, 1) 0.45s backwards;
+    }
+
+    /* Attention Item Interactive Styling */
+    .attention-row {
+      position: relative;
+      transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .attention-row::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 15%;
+      bottom: 15%;
+      width: 3px;
+      border-radius: 9999px;
+      background-color: transparent;
+      transition: all 0.25s ease;
+    }
+    .attention-row:hover::before {
+      background-color: #006B48;
+      top: 10%;
+      bottom: 10%;
+    }
+    .attention-row:hover .attention-arrow {
+      transform: translateX(4px);
+    }
+
+    /* Notification Bell Pulse */
+    @keyframes subtleGlow {
+      0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+      }
+      50% {
+        transform: scale(1.15);
+        box-shadow: 0 0 0 4px rgba(245, 158, 11, 0);
+      }
+    }
+    .notification-ping {
+      animation: subtleGlow 2.5s infinite ease-in-out;
+    }
+
+    /* Accessibility: reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-[#EEF5F1] text-[#0C2741] overflow-x-hidden">
+<!-- Toast Feedback Container -->
+<div class="fixed bottom-6 right-6 z-50 flex items-center space-x-3 bg-[#0C2741] text-white px-4 py-3 rounded-xl shadow-2xl border border-white/10 opacity-0 pointer-events-none transform translate-y-3 transition-all duration-300 ease-out" id="toastNotification">
+<div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<p class="text-xs sm:text-sm font-semibold tracking-wide" id="toastMessage">Action executed successfully</p>
+</div>
+<!-- BEGIN: TopBar -->
+<header class="animate-header w-full bg-[#004C35] text-white h-[74px] px-4 md:px-6 flex items-center justify-between shadow-sm flex-shrink-0 z-20 transition-all duration-300">
+<!-- Left: Hamburger (Mobile/Tablet only) + Brand Logo & Title -->
+<div class="flex items-center space-x-3 md:space-x-3.5">
+<!-- Hamburger Button: visible on mobile/tablet (<1024px), hidden on desktop (lg:hidden) -->
+<button aria-label="Open sidebar menu" class="lg:hidden p-2 rounded-xl text-white/90 hover:text-white hover:bg-[#003B29] transition-all duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-[#98D8BA]" id="openSidebarBtn">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+<div class="w-10 h-10 rounded-xl bg-[#005c41] flex items-center justify-center p-1.5 shadow-inner flex-shrink-0 transition-transform duration-300 hover:rotate-6">
+<!-- Leaf Vector Graphic -->
+<svg class="w-7 h-7 text-[#22C55E]" fill="currentColor" viewBox="0 0 24 24">
+<path d="M12 2C6.5 2 2 6.5 2 12c0 2.2.8 4.2 2.1 5.8L4 21c1.5 0 3.2-.6 4.3-1.7C9.8 19.8 10.9 20 12 20c5.5 0 10-4.5 10-10 0-5.5-4.5-8-10-8zm-1 15c-2.8 0-5-2.2-5-5 0-2.2 1.4-4.1 3.5-4.7v5.2l3 2.1c-.5.4-1 .4-1.5.4z"></path>
+<path d="M12 3c4.97 0 9 4.03 9 9 0 2.12-.74 4.07-1.97 5.61l-7.03-7.03V3.5c0-.28.22-.5.5-.5z" fill="#4ADE80" opacity="0.9"></path>
+</svg>
+</div>
+<div>
+<h1 class="text-[17px] md:text-[19px] font-bold tracking-tight text-white leading-tight">Main Dashboard</h1>
+<p class="text-[11px] md:text-xs text-[#98D8BA] font-medium tracking-wide">Surplus MealGuard AI · Enterprise Food Flow System</p>
+</div>
+</div>
+<!-- Right: Notifications & User Profile -->
+<div class="flex items-center space-x-3 md:space-x-4">
+<!-- Notification Icon Button -->
+<button class="relative w-10 h-10 rounded-full bg-[#003B29]/60 hover:bg-[#003B29] transition-all duration-200 hover:scale-105 active:scale-95 border border-[#005e42] flex items-center justify-center text-white/90" onclick="showToast('Notifications checked: all food routes normal.')">
+<svg class="w-5 h-5 text-gray-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="notification-ping absolute top-2 right-2 w-2 h-2 rounded-full bg-[#F59E0B] ring-2 ring-[#004C35]"></span>
+</button>
+<!-- User Dropdown Pill -->
+<div class="flex items-center bg-[#003B29]/60 hover:bg-[#003B29] transition-all duration-200 hover:scale-[1.02] active:scale-95 py-1 pl-1 pr-3 rounded-full border border-[#005e42] cursor-pointer">
+<div class="w-8 h-8 rounded-full bg-[#0284C7] flex items-center justify-center font-bold text-white text-sm shadow-sm">
+          J
+        </div>
+<span class="ml-2 text-sm font-semibold text-white hidden sm:inline">Jay</span>
+<svg class="w-4 h-4 ml-1.5 text-gray-300 transition-transform duration-200 group-hover:rotate-180" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+</div>
+</header>
+<!-- END: TopBar -->
+<!-- Backdrop Overlay for Mobile/Tablet Drawer -->
+<div aria-hidden="true" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out lg:hidden" id="sidebarBackdrop"></div>
+<div class="flex flex-1 p-3 md:p-5 gap-5 overflow-hidden max-w-[1720px] mx-auto w-full relative">
+<!-- BEGIN: LeftSidebar -->
+<!-- Mobile/Tablet: fixed sliding drawer (z-50, -translate-x-full by default). Desktop (lg): static permanent sidebar -->
+<aside class="animate-sidebar fixed inset-y-0 left-0 z-50 w-[285px] lg:w-[275px] max-w-[85vw] h-full lg:h-auto bg-white lg:rounded-2xl border-r lg:border border-[#E3ECE6] shadow-2xl lg:shadow-sm flex flex-col justify-between py-5 px-3.5 custom-scrollbar overflow-y-auto transform -translate-x-full lg:translate-x-0 lg:static lg:transform-none transition-transform duration-300 ease-in-out flex-shrink-0" id="mainSidebar">
+<div class="space-y-6">
+<!-- Logo Header in Sidebar & Close Button for mobile drawer -->
+<div class="flex items-center justify-between px-3 py-1">
+<div class="flex items-center space-x-2.5">
+<div class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center transition-transform duration-300 hover:rotate-6">
+<svg class="w-5 h-5 text-[#006B48]" fill="currentColor" viewBox="0 0 24 24">
+<path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25V7.5c4 0 7.5.5 8 1.5z"></path>
+</svg>
+</div>
+<span class="font-bold text-[16px] tracking-tight text-[#0C2741]">Surplus MealGuard AI</span>
+</div>
+<!-- Mobile Close Button (X) -->
+<button aria-label="Close sidebar menu" class="lg:hidden p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors active:scale-95" id="closeSidebarBtn">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+<!-- Main Navigation Links -->
+<nav class="space-y-1 text-sm font-medium">
+<!-- Active Link -->
+<a class="flex items-center space-x-3 px-3.5 py-2.5 bg-[#006B48] text-white rounded-xl shadow-sm transition-all duration-200 hover:shadow" href="#">
+<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="font-semibold text-[14.5px]">Dashboard</span>
+</a>
+<!-- Food Distribution -->
+<a class="group flex items-center space-x-3 px-3.5 py-2.5 text-[#334D5C] hover:bg-[#F2F7F4] hover:text-[#0C2741] rounded-xl transition-all duration-200" href="#">
+<svg class="w-5 h-5 text-[#EAB308] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="">Food Distribution</span>
+</a>
+<!-- End of Day Report -->
+<a class="group flex items-center space-x-3 px-3.5 py-2.5 text-[#334D5C] hover:bg-[#F2F7F4] hover:text-[#0C2741] rounded-xl transition-all duration-200" href="#">
+<svg class="w-5 h-5 text-gray-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="">End of Day Report</span>
+</a>
+<!-- Waste Analysis -->
+<a class="group flex items-center space-x-3 px-3.5 py-2.5 text-[#334D5C] hover:bg-[#F2F7F4] hover:text-[#0C2741] rounded-xl transition-all duration-200" href="#">
+<svg class="w-5 h-5 text-blue-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="">Waste Analysis</span>
+</a>
+<!-- Reports -->
+<a class="group flex items-center space-x-3 px-3.5 py-2.5 text-[#334D5C] hover:bg-[#F2F7F4] hover:text-[#0C2741] rounded-xl transition-all duration-200" href="#">
+<svg class="w-5 h-5 text-gray-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="">Reports</span>
+</a>
+<!-- Menu Management -->
+<a class="group flex items-center space-x-3 px-3.5 py-2.5 text-[#334D5C] hover:bg-[#F2F7F4] hover:text-[#0C2741] rounded-xl transition-all duration-200" href="#">
+<svg class="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="">Menu Management</span>
+</a>
+<!-- Settings -->
+<a class="group flex items-center space-x-3 px-3.5 py-2.5 text-[#334D5C] hover:bg-[#F2F7F4] hover:text-[#0C2741] rounded-xl transition-all duration-200" href="#">
+<svg class="w-5 h-5 text-gray-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round"></path>
+<path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="">Settings</span>
+</a>
+</nav>
+
+</div>
+<!-- Bottom Logout Button -->
+<div class="pt-4 border-t border-[#E7EFEA]">
+<button class="w-full flex items-center space-x-3 px-3.5 py-2.5 text-red-600 hover:bg-red-50 rounded-xl font-medium text-sm transition-all duration-200 active:scale-95" onclick="showToast('Logout session terminated safely')">
+<svg class="w-5 h-5 text-[#B91C1C]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span class="font-medium text-[15px]">Logout</span>
+</button>
+</div>
+</aside>
+<!-- END: LeftSidebar -->
+<!-- BEGIN: MainContent -->
+<main class="flex-1 flex flex-col space-y-5 overflow-y-auto custom-scrollbar pr-1 w-full min-w-0">
+<!-- BEGIN: TopMetricsRow -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-4" data-purpose="top-metrics">
+<!-- Metric Card 1: Today's AI Generated Target -->
+<div class="animate-card-1 group relative bg-white rounded-2xl border border-[#E3ECE6] pt-3 pb-5 px-5 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col justify-between">
+<!-- Top Accent Bar -->
+<div class="absolute top-0 left-0 right-0 h-1 bg-[#6366F1]"></div>
+<div>
+<div class="flex items-start justify-between">
+<div class="flex items-center space-x-3">
+<div class="w-10 h-10 rounded-full bg-[#EEF2FF] flex items-center justify-center text-[#4F46E5] flex-shrink-0 transition-transform duration-300 group-hover:scale-105">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<h3 class="font-bold text-[15px] text-[#0C2741] leading-tight">Today's AI Generated Target</h3>
+<p class="text-xs text-gray-500 font-normal">AI production recommendation</p>
+</div>
+</div>
+<!-- Enter Button -->
+</div>
+<!-- Metric Value -->
+<div class="mt-7">
+<span class="text-4xl font-extrabold text-[#2563EB]">0</span>
+<span class="text-base font-semibold text-gray-600 ml-1.5">kg</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-2 pt-1"><p class="text-xs text-gray-500 font-medium">No AI target generated yet</p><button class="inline-flex items-center justify-center space-x-2 rounded-full px-6 py-2.5 text-sm font-semibold text-black tracking-normal transition-all duration-200 backdrop-blur-xl border border-white/80 shadow-[0_8px_32px_0_rgba(31,38,135,0.12),inset_0_1.5px_2px_0_rgba(255,255,255,0.9),inset_0_-1px_2px_0_rgba(0,0,0,0.06)] hover:shadow-[0_12px_36px_0_rgba(31,38,135,0.2),inset_0_1.5px_3px_0_rgba(255,255,255,1)] hover:bg-white/80 active:scale-[0.97] cursor-pointer" onclick="showToast('AI Target module accessed.')" style="background: linear-gradient(135deg, rgba(255, 255, 255, 0.65) 0%, rgba(220, 235, 255, 0.35) 50%, rgba(255, 255, 255, 0.45) 100%);"><svg class="w-4 h-4 text-black" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24"><path d="M4 15s1-2.5 3-2.5 2.5 4 4.5 4 3.5-7 5.5-7 3 4 3 4"></path></svg><span class="">ENTER</span></button></div>
+</div>
+<!-- Metric Card 2: Today's Production -->
+<div class="animate-card-2 group relative bg-white rounded-2xl border border-[#E3ECE6] pt-3 pb-5 px-5 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col justify-between">
+<!-- Top Accent Bar -->
+<div class="absolute top-0 left-0 right-0 h-1 bg-[#F59E0B]"></div>
+<div>
+<div class="flex items-start justify-between">
+<div class="flex items-center space-x-3">
+<div class="w-10 h-10 rounded-full bg-[#FEF3C7] flex items-center justify-center text-[#D97706] flex-shrink-0 transition-transform duration-300 group-hover:scale-105">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<h3 class="font-bold text-[15px] text-[#0C2741] leading-tight">Today's Production</h3>
+<p class="text-xs text-gray-500 font-normal">Today's actual Produced food by kitchen</p>
+</div>
+</div>
+<!-- Enter Button -->
+</div>
+<!-- Metric Value -->
+<div class="mt-7">
+<span class="text-4xl font-extrabold text-[#2563EB]">0</span>
+<span class="text-base font-semibold text-gray-600 ml-1.5">kg / Produced<br></span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-2 pt-1"><p class="text-xs text-gray-500 font-medium">No targets generated yet</p><button class="inline-flex items-center justify-center space-x-2 rounded-full px-6 py-2.5 text-sm font-semibold text-black tracking-normal transition-all duration-200 backdrop-blur-xl border border-white/80 shadow-[0_8px_32px_0_rgba(31,38,135,0.12),inset_0_1.5px_2px_0_rgba(255,255,255,0.9),inset_0_-1px_2px_0_rgba(0,0,0,0.06)] hover:shadow-[0_12px_36px_0_rgba(31,38,135,0.2),inset_0_1.5px_3px_0_rgba(255,255,255,1)] hover:bg-white/80 active:scale-[0.97] cursor-pointer" onclick="showToast('Production target log opened.')" style="background: linear-gradient(135deg, rgba(255, 255, 255, 0.65) 0%, rgba(220, 235, 255, 0.35) 50%, rgba(255, 255, 255, 0.45) 100%);"><svg class="w-4 h-4 text-black" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24"><path d="M4 15s1-2.5 3-2.5 2.5 4 4.5 4 3.5-7 5.5-7 3 4 3 4"></path></svg><span class="">ENTER</span></button></div>
+</div>
+<!-- Metric Card 3: Today's Record -->
+<div class="animate-card-3 group relative bg-white rounded-2xl border border-[#E3ECE6] pt-3 pb-5 px-5 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col justify-between">
+<!-- Top Accent Bar -->
+<div class="absolute top-0 left-0 right-0 h-1 bg-[#10B981]"></div>
+<div>
+<div class="flex items-start justify-between">
+<div class="flex items-center space-x-3">
+<div class="w-10 h-10 rounded-full bg-[#DCFCE7] flex items-center justify-center text-[#059669] flex-shrink-0 transition-transform duration-300 group-hover:scale-105">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<h3 class="font-bold text-[15px] text-[#0C2741] leading-tight">Today's Record</h3>
+<p class="text-xs text-gray-500 font-normal">Today's Record Served</p>
+</div>
+</div>
+<!-- Enter Button -->
+</div>
+<!-- Metric Value -->
+<div class="mt-7 flex items-baseline">
+<span class="text-4xl font-extrabold text-[#006B48]">0</span>
+<span class="text-2xl font-bold text-gray-400 mx-1.5">/</span>
+<span class="text-4xl font-extrabold text-[#006B48]">0</span>
+<span class="text-base font-semibold text-gray-600 ml-1.5">kg / Served</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-2 pt-1"><p class="text-xs text-gray-500 font-medium">Waste logged today: <span class="font-bold text-[#0C2741]">0 kg</span> · Surplus: <span class="font-bold text-[#0C2741]">0 kg</span></p><button class="inline-flex items-center justify-center space-x-2 rounded-full px-6 py-2.5 text-sm font-semibold text-black tracking-normal transition-all duration-200 backdrop-blur-xl border border-white/80 shadow-[0_8px_32px_0_rgba(31,38,135,0.12),inset_0_1.5px_2px_0_rgba(255,255,255,0.9),inset_0_-1px_2px_0_rgba(0,0,0,0.06)] hover:shadow-[0_12px_36px_0_rgba(31,38,135,0.2),inset_0_1.5px_3px_0_rgba(255,255,255,1)] hover:bg-white/80 active:scale-[0.97] cursor-pointer" onclick="showToast('Production entry recorder started.')" style="background: linear-gradient(135deg, rgba(255, 255, 255, 0.65) 0%, rgba(220, 235, 255, 0.35) 50%, rgba(255, 255, 255, 0.45) 100%);"><svg class="w-4 h-4 text-black" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24"><path d="M4 15s1-2.5 3-2.5 2.5 4 4.5 4 3.5-7 5.5-7 3 4 3 4"></path></svg><span class="">ENTER</span></button></div>
+</div>
+</section>
+<!-- END: TopMetricsRow -->
+<!-- BEGIN: OperationalRow -->
+<section class="animate-section-1 grid grid-cols-1 lg:grid-cols-12 gap-4" data-purpose="operational-metrics">
+<!-- Live Food Flow (Width: 7 cols ~ 58%) -->
+<div class="lg:col-span-7 bg-white rounded-2xl border border-[#E3ECE6] p-5 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow duration-300">
+<div>
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-3">
+<span class="relative flex h-3.5 w-3.5">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-[#059669]"></span>
+</span>
+<div>
+<h2 class="text-lg font-bold text-[#0C2741]">Live food flow</h2>
+<p class="text-xs text-gray-500 font-medium">Meals moving through your kitchen in real time.</p>
+</div>
+</div>
+<button class="text-xs font-semibold text-[#006B48] bg-[#ECFDF5] hover:bg-[#D1FAE5] px-3.5 py-1.5 rounded-full flex items-center space-x-1.5 transition-all duration-200 hover:scale-105 active:scale-95 group" onclick="showToast('Loading full interactive food flow map...')">
+<span class="">Open food flow</span>
+<span class="transition-transform duration-200 group-hover:translate-x-1">→</span>
+</button>
+</div>
+<!-- 3 Process Flow Steps with Arrow Separators -->
+<div class="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+<!-- Step 1: Prepared -->
+<div class="flex-1 bg-[#F9FCFA] border border-[#E3EFE8] rounded-xl p-3.5 hover:border-emerald-300 hover:bg-emerald-50/20 transition-all duration-200">
+<div class="flex items-center space-x-2">
+<div class="w-7 h-7 rounded-lg bg-[#E6F4EA] flex items-center justify-center text-[#059669]">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block leading-none">Prepared</span>
+<span class="text-2xl font-black text-[#0C2741] mt-0.5 block counter-value" data-target="2480">2,480</span>
+</div>
+</div>
+<div class="mt-3">
+<span class="text-[11.5px] font-medium text-emerald-800">meals ready</span>
+<div class="w-full bg-gray-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
+<div class="bg-[#10B981] h-1.5 rounded-full w-0 progress-bar transition-all duration-1000 ease-out" data-target-width="75%" style="width: 75%;"></div>
+</div>
+</div>
+</div>
+<!-- Arrow Step Indicator -->
+<div class="hidden sm:flex w-7 h-7 rounded-full bg-white border border-[#D5E3DA] items-center justify-center text-gray-400 shadow-xs flex-shrink-0 self-center hover:scale-110 hover:border-emerald-300 transition-transform duration-200 cursor-default">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<!-- Step 2: Served -->
+<div class="flex-1 bg-[#F9FCFA] border border-[#E3EFE8] rounded-xl p-3.5 hover:border-emerald-300 hover:bg-emerald-50/20 transition-all duration-200">
+<div class="flex items-center space-x-2">
+<div class="w-7 h-7 rounded-lg bg-[#E6F4EA] flex items-center justify-center text-[#059669]">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block leading-none">Served</span>
+<span class="text-2xl font-black text-[#0C2741] mt-0.5 block counter-value" data-target="1960">1,960</span>
+</div>
+</div>
+<div class="mt-3">
+<span class="text-[11.5px] font-medium text-emerald-800">meals served</span>
+<div class="w-full bg-gray-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
+<div class="bg-[#004C35] h-1.5 rounded-full w-0 progress-bar transition-all duration-1000 ease-out delay-150" data-target-width="80%" style="width: 80%;"></div>
+</div>
+</div>
+</div>
+<!-- Arrow Step Indicator -->
+<div class="hidden sm:flex w-7 h-7 rounded-full bg-white border border-[#D5E3DA] items-center justify-center text-gray-400 shadow-xs flex-shrink-0 self-center hover:scale-110 hover:border-emerald-300 transition-transform duration-200 cursor-default">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<!-- Step 3: Redistributed -->
+<div class="flex-1 bg-[#FFFDF7] border border-[#FDE8B5] rounded-xl p-3.5 hover:border-amber-300 hover:bg-amber-50/40 transition-all duration-200">
+<div class="flex items-center space-x-2">
+<div class="w-7 h-7 rounded-lg bg-[#FEF3C7] flex items-center justify-center text-[#D97706]">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<span class="text-[11px] font-semibold text-[#B45309] uppercase tracking-wider block leading-none">Redistributed</span>
+<span class="text-2xl font-black text-[#D97706] mt-0.5 block counter-value" data-target="320">320</span>
+</div>
+</div>
+<div class="mt-3">
+<span class="text-[11.5px] font-medium text-[#B45309]">meals to people</span>
+<div class="w-full bg-[#FEE2E2] h-1.5 rounded-full mt-1.5 overflow-hidden">
+<div class="bg-[#F59E0B] h-1.5 rounded-full w-0 progress-bar transition-all duration-1000 ease-out delay-300" data-target-width="40%" style="width: 40%;"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Impact This Month (Width: 5 cols ~ 42%) -->
+<div class="lg:col-span-5 bg-white rounded-2xl border border-[#E3ECE6] p-5 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow duration-300">
+<div>
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-2.5">
+<div class="w-8 h-8 rounded-lg bg-[#E8F5EE] flex items-center justify-center text-[#059669]">
+<svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<h2 class="text-lg font-bold text-[#0C2741]">Impact this month</h2>
+<p class="text-xs text-gray-500 font-medium">Food saved from waste and put to good use.</p>
+</div>
+</div>
+<!-- Period Pill Dropdown -->
+<button class="text-xs font-semibold text-[#0C2741] border border-gray-200 px-2.5 py-1 rounded-full flex items-center space-x-1 hover:bg-gray-50 transition-colors active:scale-95">
+<span class="">This month</span>
+<svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Content: Value + Callout + Bar Chart -->
+<div class="mt-4 flex items-end justify-between">
+<div>
+<div class="flex items-baseline">
+<span class="text-4xl font-extrabold text-[#0C2741] counter-value" data-target="312">312</span>
+<span class="text-xl font-bold text-[#0C2741] ml-1">kg</span>
+</div>
+<p class="text-xs text-gray-500 font-medium mt-0.5">saved this month</p>
+<!-- Pill Callout -->
+<div class="mt-3.5 inline-flex items-center space-x-1.5 bg-[#E6F7F0] text-[#006B48] px-3 py-1 rounded-full text-xs font-semibold transition-transform hover:scale-105">
+<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+<path d="M12 2C6.5 2 2 6.5 2 12c0 2.2.8 4.2 2.1 5.8L4 21c1.5 0 3.2-.6 4.3-1.7C9.8 19.8 10.9 20 12 20c5.5 0 10-4.5 10-10 0-5.5-4.5-8-10-8z"></path>
+</svg>
+<span class="">That's <span class="counter-value" data-target="1040">1,040</span> meals kept from landfill.</span>
+</div>
+</div>
+<!-- Bar Chart Representation -->
+<div class="flex items-end space-x-2 pb-1">
+<!-- Y-Axis Subtle Numbers -->
+<div class="flex flex-col justify-between text-[10px] text-gray-400 h-24 text-right pr-1 select-none">
+<span class="">200</span>
+<span class="">150</span>
+<span class="">100</span>
+<span class="">50</span>
+<span class="">0</span>
+</div>
+<!-- Bars (W1, W2, W3, W4) with tooltips and hover effects -->
+<div class="flex items-end space-x-2">
+<!-- W1 -->
+<div class="group relative flex flex-col items-center">
+<div class="absolute -top-7 opacity-0 group-hover:opacity-100 group-hover:-top-8 transition-all duration-200 pointer-events-none bg-gray-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-30 whitespace-nowrap">45 kg</div>
+<div class="chart-bar-anim w-5 bg-[#A7F3D0] rounded-t-sm group-hover:bg-[#86efac] group-hover:scale-y-105 transition-all duration-200 cursor-pointer" style="height: 32px;"></div>
+<span class="text-[10px] font-medium text-gray-500 mt-1">W1</span>
+</div>
+<!-- W2 -->
+<div class="group relative flex flex-col items-center">
+<div class="absolute -top-7 opacity-0 group-hover:opacity-100 group-hover:-top-8 transition-all duration-200 pointer-events-none bg-gray-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-30 whitespace-nowrap">80 kg</div>
+<div class="chart-bar-anim w-5 bg-[#6EE7B7] rounded-t-sm group-hover:bg-[#4ade80] group-hover:scale-y-105 transition-all duration-200 cursor-pointer" style="height: 52px;"></div>
+<span class="text-[10px] font-medium text-gray-500 mt-1">W2</span>
+</div>
+<!-- W3 -->
+<div class="group relative flex flex-col items-center">
+<div class="absolute -top-7 opacity-0 group-hover:opacity-100 group-hover:-top-8 transition-all duration-200 pointer-events-none bg-gray-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-30 whitespace-nowrap">110 kg</div>
+<div class="chart-bar-anim w-5 bg-[#34D399] rounded-t-sm group-hover:bg-[#10b981] group-hover:scale-y-105 transition-all duration-200 cursor-pointer" style="height: 68px;"></div>
+<span class="text-[10px] font-medium text-gray-500 mt-1">W3</span>
+</div>
+<!-- W4 -->
+<div class="group relative flex flex-col items-center">
+<div class="absolute -top-7 opacity-0 group-hover:opacity-100 group-hover:-top-8 transition-all duration-200 pointer-events-none bg-gray-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-30 whitespace-nowrap">145 kg</div>
+<div class="chart-bar-anim w-5 bg-[#059669] rounded-t-sm group-hover:bg-[#047857] group-hover:scale-y-105 transition-all duration-200 cursor-pointer" style="height: 84px;"></div>
+<span class="text-[10px] font-medium text-gray-500 mt-1">W4</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- END: OperationalRow -->
+<!-- BEGIN: AttentionSection -->
+<section class="animate-section-2 bg-white rounded-2xl border border-[#E3ECE6] p-5 shadow-sm hover:shadow-md transition-shadow duration-300" data-purpose="attention-needed">
+<!-- Attention Header -->
+<div class="flex items-center justify-between pb-3 border-b border-[#F0F5F2]">
+<div class="flex items-center space-x-3">
+<div class="w-9 h-9 rounded-full bg-[#FEF3C7] flex items-center justify-center text-[#D97706] transition-transform duration-300 hover:rotate-12">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<h2 class="text-base font-bold text-[#0C2741] leading-tight">Attention needed</h2>
+<p class="text-xs text-gray-500 font-medium">A few things need your review to keep everything on track.</p>
+</div>
+</div>
+<a class="group text-xs font-semibold text-[#006B48] hover:text-[#004C35] flex items-center space-x-1 transition-colors" href="#" onclick="showToast('Loading full alerts and attention inbox...')">
+<span class="">View all</span>
+<span class="transition-transform duration-200 group-hover:translate-x-1">→</span>
+</a>
+</div>
+<!-- Attention Item 1 -->
+<div class="attention-row flex items-center justify-between py-3.5 border-b border-[#F0F5F2] hover:bg-[#F9FCFA] px-2 rounded-xl transition-all cursor-pointer" onclick="showToast('Opening Lunch target review sheet...')">
+<div class="flex items-center space-x-3.5">
+<div class="w-9 h-9 rounded-xl bg-[#FEF3C7] flex items-center justify-center text-[#D97706] flex-shrink-0 transition-transform duration-200 hover:scale-110">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<h4 class="text-sm font-bold text-[#0C2741]">Lunch target awaiting review</h4>
+<p class="text-xs text-gray-500 font-normal">Generated target for lunch is ready to review.</p>
+</div>
+</div>
+<div class="flex items-center space-x-3">
+<span class="text-xs font-semibold px-3 py-1 rounded-full bg-[#FEF3C7] text-[#B45309] transition-transform duration-200 hover:scale-105">
+              Needs review
+            </span>
+<svg class="attention-arrow w-4 h-4 text-gray-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+</div>
+<!-- Attention Item 2 -->
+<div class="attention-row flex items-center justify-between py-3.5 border-b border-[#F0F5F2] hover:bg-[#F9FCFA] px-2 rounded-xl transition-all cursor-pointer" onclick="showToast('Connecting with 3 donation NGO partners...')">
+<div class="flex items-center space-x-3.5">
+<div class="w-9 h-9 rounded-xl bg-[#DCFCE7] flex items-center justify-center text-[#059669] flex-shrink-0 transition-transform duration-200 hover:scale-110">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<h4 class="text-sm font-bold text-[#0C2741]">3 donation partners eligible</h4>
+<p class="text-xs text-gray-500 font-normal">New surplus matches available for today's meals.</p>
+</div>
+</div>
+<div class="flex items-center space-x-3">
+<span class="text-xs font-semibold px-3 py-1 rounded-full bg-[#DCFCE7] text-[#059669] transition-transform duration-200 hover:scale-105">
+              Action available
+            </span>
+<svg class="attention-arrow w-4 h-4 text-gray-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+</div>
+<!-- Attention Item 3 -->
+<div class="attention-row flex items-center justify-between py-3.5 hover:bg-[#F9FCFA] px-2 rounded-xl transition-all cursor-pointer" onclick="showToast('Daily inventory count module launched...')">
+<div class="flex items-center space-x-3.5">
+<div class="w-9 h-9 rounded-xl bg-[#FEF3C7] flex items-center justify-center text-[#D97706] flex-shrink-0 transition-transform duration-200 hover:scale-110">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div>
+<h4 class="text-sm font-bold text-[#0C2741]">Inventory count due today</h4>
+<p class="text-xs text-gray-500 font-normal">Complete today's inventory count to stay on track.</p>
+</div>
+</div>
+<div class="flex items-center space-x-3">
+<span class="text-xs font-semibold px-3 py-1 rounded-full bg-[#FEF3C7] text-[#B45309] transition-transform duration-200 hover:scale-105">
+              Due today
+            </span>
+<svg class="attention-arrow w-4 h-4 text-gray-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</div>
+</div>
+</section>
+<!-- END: AttentionSection -->
+</main>
+<!-- END: MainContent -->
+</div>
+<script>
+  (function() {
+    // Responsive Mobile/Tablet Sidebar Drawer Handlers
+    const sidebar = document.getElementById('mainSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const openBtn = document.getElementById('openSidebarBtn');
+    const closeBtn = document.getElementById('closeSidebarBtn');
+
+    function openDrawer() {
+      sidebar.classList.remove('-translate-x-full');
+      sidebar.classList.add('translate-x-0');
+      backdrop.classList.remove('opacity-0', 'pointer-events-none');
+      backdrop.classList.add('opacity-100', 'pointer-events-auto');
+      document.body.classList.add('overflow-hidden', 'lg:overflow-auto');
+    }
+
+    function closeDrawer() {
+      sidebar.classList.add('-translate-x-full');
+      sidebar.classList.remove('translate-x-0');
+      backdrop.classList.add('opacity-0', 'pointer-events-none');
+      backdrop.classList.remove('opacity-100', 'pointer-events-auto');
+      document.body.classList.remove('overflow-hidden', 'lg:overflow-auto');
+    }
+
+    if (openBtn) openBtn.addEventListener('click', openDrawer);
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    if (backdrop) backdrop.addEventListener('click', closeDrawer);
+
+    window.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeDrawer();
+      }
+    });
+
+    window.addEventListener('resize', function() {
+      if (window.innerWidth >= 1024) {
+        closeDrawer();
+      }
+    });
+
+    // Smooth Numeric Counters using requestAnimationFrame
+    function animateCounters() {
+      const counters = document.querySelectorAll('.counter-value');
+      const speed = 1100; // ms
+
+      counters.forEach(counter => {
+        const target = +counter.getAttribute('data-target');
+        let startTime = null;
+
+        function updateCount(timestamp) {
+          if (!startTime) startTime = timestamp;
+          const progress = Math.min((timestamp - startTime) / speed, 1);
+          // Ease Out Quad
+          const easeOut = 1 - (1 - progress) * (1 - progress);
+          const current = Math.floor(easeOut * target);
+          
+          counter.innerText = current.toLocaleString('en-US');
+
+          if (progress < 1) {
+            requestAnimationFrame(updateCount);
+          } else {
+            counter.innerText = target.toLocaleString('en-US');
+          }
+        }
+
+        requestAnimationFrame(updateCount);
+      });
+    }
+
+    // Expand Process Progress Bars
+    function animateProgressBars() {
+      setTimeout(() => {
+        const bars = document.querySelectorAll('.progress-bar');
+        bars.forEach(bar => {
+          const targetWidth = bar.getAttribute('data-target-width');
+          bar.style.width = targetWidth;
+        });
+      }, 250);
+    }
+
+    // Toast Notification helper
+    let toastTimeout;
+    window.showToast = function(msg) {
+      const toast = document.getElementById('toastNotification');
+      const toastMsg = document.getElementById('toastMessage');
+      if (!toast || !toastMsg) return;
+
+      toastMsg.innerText = msg;
+      toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
+      toast.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-3');
+        toast.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+      }, 2800);
+    };
+
+    // Run on interactive ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        animateCounters();
+        animateProgressBars();
+      });
+    } else {
+      animateCounters();
+      animateProgressBars();
+    }
+  })();
+</script>
+
+
+</body></html>
