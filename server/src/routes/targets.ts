@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, requireRole, audit, type AuthenticatedRequest } from '../auth';
 import { notifyOrg } from './notifications';
-import { buildSeries, forecastForDate, MEMORY_VERSION, utcDayKey } from '../lib/kitchen-memory';
+import { buildSeries, forecastForDate, menuMultiplierFor, MEMORY_VERSION, utcDayKey } from '../lib/kitchen-memory';
+import {
+  ML_VERSION, buildFeatureRows, describeHistory,
+  rollingOriginEvaluate, predictNext,
+} from '../lib/ml-forecast';
 import { bufferKgFor, validateBuffer, DEFAULT_BUFFER, type BufferSetting } from '../lib/targets';
 
 const router = Router();
@@ -91,20 +95,65 @@ router.post('/generate', requireRole(...MANAGE_ROLES), async (req: Authenticated
       for (const meal of MEAL_TYPES) {
         const series = buildSeries(records, menus, kitchen.id, f.id, meal);
         if (series.length < 2) continue;
+        // Phase 2: train/validate candidate models on ACTUALS ONLY (soldKg from
+        // DailyFoodRecord). Own past predictions are never training input.
+        // Insufficient history (<2 points or no validation fold) keeps the
+        // memory-v1 baseline path below — never a fake confident model.
+        const soldHist = series.map((p) => p.soldKg);
+        const dowHist = series.map((p) => new Date(p.date).getUTCDay());
+        const evaluation = rollingOriginEvaluate(soldHist, dowHist, 4);
+        const useMl = !('insufficient' in evaluation);
+        const histDesc = describeHistory(soldHist);
+        const histFeatures = buildFeatureRows(series.map((p) => ({ date: p.date, soldKg: p.soldKg })));
+        const lastFeatures = histFeatures.length > 0 ? histFeatures[histFeatures.length - 1] : null;
         for (let d = 0; d < daysAhead; d++) {
           const target = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() + d));
           const fc = forecastForDate(series, target);
           if (fc.insufficient) continue;
-          const bKg = bufferKgFor(fc.predictedKg, buffer);
-          const recommended = r3(fc.predictedKg + bKg);
+          let predictedKg = fc.predictedKg;
+          let lowerKg = fc.lowerKg;
+          let upperKg = fc.upperKg;
+          let dataConfidence = fc.dataConfidence;
+          let comparableCount = fc.comparableCount;
+          let fallbackUsed = fc.fallbackUsed;
+          let fallbackReason = fc.fallbackReason;
+          let menuMult = fc.menuMultiplier;
+          let menuOnMeanKg = fc.menuOnMeanKg;
+          let menuOffMeanKg = fc.menuOffMeanKg;
+          let stdDevKg = fc.stdDevKg;
+          let modelName: string = MEMORY_VERSION;
+          let modelVersion = MEMORY_VERSION;
+          let validation: unknown = null;
+          if (useMl && !('insufficient' in evaluation)) {
+            const px = predictNext(soldHist, dowHist, target.getUTCDay(), evaluation.best.modelName);
+            const mm = menuMultiplierFor(series);
+            predictedKg = r3(px.predicted * mm.multiplier);
+            lowerKg = r3(Math.max(0, predictedKg - px.std));
+            upperKg = r3(predictedKg + px.std);
+            const cv = histDesc.mean > 0 ? px.std / histDesc.mean : 1;
+            dataConfidence = histDesc.n >= 8 && cv <= 0.25 ? 'high' : histDesc.n >= 4 ? 'medium' : 'low';
+            comparableCount = px.sampleSize;
+            fallbackUsed = false;
+            fallbackReason = null;
+            menuMult = r3(mm.multiplier);
+            menuOnMeanKg = mm.onMeanKg;
+            menuOffMeanKg = mm.offMeanKg;
+            stdDevKg = px.std;
+            modelName = evaluation.best.modelName;
+            modelVersion = ML_VERSION;
+            validation = evaluation.best;
+          }
+          const bKg = bufferKgFor(predictedKg, buffer);
+          const recommended = r3(predictedKg + bKg);
           const inputs = {
             foodItemId: f.id, foodName: f.name, mealType: meal,
-            baselineKg: fc.baselineKg, recentTrendKg: fc.recentTrendKg, menuMultiplier: fc.menuMultiplier,
-            menuOnMeanKg: fc.menuOnMeanKg, menuOffMeanKg: fc.menuOffMeanKg,
-            lowerKg: fc.lowerKg, upperKg: fc.upperKg, dataConfidence: fc.dataConfidence,
-            comparableCount: fc.comparableCount, fallbackUsed: fc.fallbackUsed, fallbackReason: fc.fallbackReason,
-            sampleValues: fc.sampleValues, sampleDates: fc.sampleDates, stdDevKg: fc.stdDevKg,
+            baselineKg: fc.baselineKg, recentTrendKg: fc.recentTrendKg, menuMultiplier: menuMult,
+            menuOnMeanKg, menuOffMeanKg,
+            lowerKg, upperKg, dataConfidence,
+            comparableCount, fallbackUsed, fallbackReason,
+            sampleValues: fc.sampleValues, sampleDates: fc.sampleDates, stdDevKg,
             bufferMode: buffer.mode, bufferValue: buffer.value,
+            modelName, modelVersion, validation, features: lastFeatures,
           };
           const existing = await prisma.productionTarget.findFirst({
             where: { organizationId: orgId, kitchenUnitId: kitchen.id, foodItemId: f.id, mealType: meal, date: target },
@@ -113,15 +162,15 @@ router.post('/generate', requireRole(...MANAGE_ROLES), async (req: Authenticated
             // Never silently overwrite a manager decision: keep adjustedKg/adjustReason/status.
             await prisma.productionTarget.update({
               where: { id: existing.id },
-              data: { predictedKg: fc.predictedKg, bufferKg: bKg, recommendedKg: recommended, memoryVersion: MEMORY_VERSION, inputsJson: JSON.stringify(inputs) },
+              data: { predictedKg, bufferKg: bKg, recommendedKg: recommended, memoryVersion: modelVersion, inputsJson: JSON.stringify(inputs) },
             });
             updated++;
           } else {
             await prisma.productionTarget.create({
               data: {
                 organizationId: orgId, kitchenUnitId: kitchen.id, foodItemId: f.id, mealType: meal, date: target,
-                predictedKg: fc.predictedKg, bufferKg: bKg, recommendedKg: recommended,
-                status: 'PROPOSED', memoryVersion: MEMORY_VERSION, inputsJson: JSON.stringify(inputs),
+                predictedKg, bufferKg: bKg, recommendedKg: recommended,
+                status: 'PROPOSED', memoryVersion: modelVersion, inputsJson: JSON.stringify(inputs),
               },
             });
             created++;
@@ -206,7 +255,8 @@ router.post('/generate', requireRole(...MANAGE_ROLES), async (req: Authenticated
       targetsUpdated: updated,
       recommendationsCreated: topRecs.length,
       historicalAccuracy,
-      method: MEMORY_VERSION,
+      method: ML_VERSION,
+      fallbackMethod: MEMORY_VERSION,
     });
   } catch {
     return res.status(500).json({ error: 'Target generation failed before anything was saved.' });

@@ -22,6 +22,9 @@ interface TargetInputs {
   bufferValue: number;
   foodName?: string;
   mealType?: string;
+  modelName?: string;
+  modelVersion?: string;
+  validation?: { mae: number; rmse: number; mape: number | null; r2: number | null; folds: number } | null;
 }
 
 interface TargetRow {
@@ -147,6 +150,40 @@ export function Dashboard() {
 
   // Period filter state for Impact
   const [impactPeriod, setImpactPeriod] = useState<'THIS_MONTH' | 'LAST_MONTH'>('THIS_MONTH');
+
+  // Phase 2: Gemini explanations of ML predictions (numbers verified server-side)
+  const [explainBusy, setExplainBusy] = useState<string | null>(null);
+  const [explanations, setExplanations] = useState<Record<string, { text: string; source: string }>>({});
+
+  function weekdayLabel(iso: string | undefined): string {
+    if (!iso) return 'selected day';
+    const d = new Date(`${iso}T00:00:00Z`);
+    if (isNaN(d.getTime())) return 'selected day';
+    return d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+  }
+
+  async function onExplain(t: TargetRow) {
+    setExplainBusy(t.id);
+    try {
+      const d = await api<{ explanation: string; source: string }>('/ml/explain', {
+        method: 'POST',
+        body: JSON.stringify({
+          predictedKg: t.predictedKg,
+          foodName: t.food,
+          mealType: t.mealType,
+          dayLabel: weekdayLabel(ov?.date),
+          sampleSize: t.inputs?.comparableCount ?? 0,
+          modelName: t.inputs?.modelName ?? 'memory-v1',
+          rmse: t.inputs?.validation?.rmse ?? null,
+        }),
+      });
+      setExplanations((e) => ({ ...e, [t.id]: { text: d.explanation, source: d.source } }));
+    } catch (err) {
+      setExplanations((e) => ({ ...e, [t.id]: { text: err instanceof Error ? err.message : 'Explanation failed.', source: 'error' } }));
+    } finally {
+      setExplainBusy(null);
+    }
+  }
 
   useEffect(() => {
     if (!kitchenId && kitchens.length > 0) setKitchenId(kitchens[0].id);
@@ -1110,6 +1147,139 @@ export function Dashboard() {
         )}
       </div>
 
+      {/* BEGIN: UpcomingPrediction (Phase 2) */}
+      <div className="bg-white rounded-2xl border border-[#E3ECE6] p-5 shadow-sm" data-purpose="ml-prediction">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E3ECE6] pb-3">
+          <div>
+            <h2 className="text-base font-bold text-[#0C2741]">
+              Upcoming Prediction{' '}
+              <span className="ml-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-[11px] font-bold text-indigo-800 border border-indigo-200">
+                ML Prediction
+              </span>
+            </h2>
+            <p className="text-xs text-gray-500">
+              Predicted demand from validated ML models trained only on your actual history. Actuals below come
+              solely from recorded data — predictions never appear as actuals.
+            </p>
+          </div>
+          <span className="text-[11px] font-semibold text-stone-500">
+            {ov ? `${ov.kitchen.name} · ${ov.date} (${weekdayLabel(ov.date)})` : ''}
+          </span>
+        </div>
+
+        {loading ? (
+          <p className="py-6 text-center text-xs text-stone-500" role="status">Loading predictions…</p>
+        ) : rows.length === 0 ? (
+          <p className="py-6 text-center text-xs text-stone-500">
+            No predictions yet. Generate forecast targets to see ML predictions here.
+          </p>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {rows.map((t) => (
+              <div key={t.id} className="rounded-xl border border-[#E3ECE6] bg-[#F9FCFA] p-4 hover:shadow-sm transition-shadow">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-[#0C2741]">
+                    {t.food} <span className="font-normal text-gray-500">· {t.mealType}</span>
+                  </p>
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800 border border-indigo-200">
+                    ML Prediction
+                  </span>
+                </div>
+                <p className="mt-2">
+                  <span className="text-3xl font-extrabold text-[#2563EB]">{t.predictedKg}</span>
+                  <span className="ml-1 text-xs font-semibold text-gray-500">kg predicted target</span>
+                </p>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Model {t.inputs?.modelName ?? 'memory-v1'} ({t.memoryVersion}) · confidence{' '}
+                  <span className={`rounded px-1.5 py-0.5 font-bold ${confChip(t.inputs?.dataConfidence ?? 'low')}`}>
+                    {(t.inputs?.dataConfidence ?? 'low').toUpperCase()}
+                  </span>{' '}
+                  · {t.inputs?.comparableCount ?? 0} records
+                </p>
+                <div className="mt-2 rounded-lg border border-emerald-200 bg-white p-2 text-[11px]">
+                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-bold text-emerald-900">Actual</span>{' '}
+                  {t.actual ? (
+                    <span className="text-stone-700">
+                      Produced {t.actual.producedKg} kg · Sold {t.actual.soldKg} kg · Waste {t.actual.wasteKg} kg
+                    </span>
+                  ) : (
+                    <span className="italic text-stone-500">No actual recorded yet — predictions never fill this in.</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void onExplain(t)}
+                  disabled={explainBusy === t.id}
+                  className="mt-2 rounded-lg border border-[#E3ECE6] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0C2741] hover:bg-[#F2F7F4] disabled:opacity-50"
+                >
+                  {explainBusy === t.id ? 'Explaining…' : '✨ Explain prediction'}
+                </button>
+                {explanations[t.id] && (
+                  <p className={`mt-1.5 rounded-lg p-2 text-[11px] ${explanations[t.id].source === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-indigo-50 text-indigo-900 border border-indigo-100'}`}>
+                    {explanations[t.id].text}
+                    {explanations[t.id].source === 'gemini' && <span className="ml-1 font-semibold">(Gemini)</span>}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* END: UpcomingPrediction */}
+
+      {/* BEGIN: ModelPerformance (Phase 2) */}
+      <div className="bg-white rounded-2xl border border-[#E3ECE6] p-5 shadow-sm" data-purpose="ml-performance">
+        <div className="border-b border-[#E3ECE6] pb-3">
+          <h2 className="text-base font-bold text-[#0C2741]">Model Performance</h2>
+          <p className="text-xs text-gray-500">
+            Genuine rolling-origin validation metrics per food — trained on past, tested on future. Small histories
+            honestly report insufficiency instead of fake confidence.
+          </p>
+        </div>
+        {loading ? (
+          <p className="py-6 text-center text-xs text-stone-500" role="status">Loading model performance…</p>
+        ) : rows.length === 0 ? (
+          <p className="py-6 text-center text-xs text-stone-500">No validated models yet.</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-xs">
+              <thead className="bg-[#F9FCFA] text-[#0C2741] font-semibold border-b border-[#E3ECE6]">
+                <tr>
+                  <th className="px-3 py-2">Food · Meal</th>
+                  <th className="px-3 py-2">Best model</th>
+                  <th className="px-3 py-2">RMSE</th>
+                  <th className="px-3 py-2">MAE</th>
+                  <th className="px-3 py-2">MAPE</th>
+                  <th className="px-3 py-2">R²</th>
+                  <th className="px-3 py-2">Folds</th>
+                  <th className="px-3 py-2">Sample</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E3ECE6]">
+                {rows.map((t) => {
+                  const v = t.inputs?.validation;
+                  return (
+                    <tr key={t.id} className="hover:bg-[#F9FCFA]">
+                      <td className="px-3 py-2 font-medium text-[#0C2741]">{t.food} · {t.mealType}</td>
+                      <td className="px-3 py-2 text-stone-700">
+                        {v ? t.inputs?.modelName : 'memory-v1 (baseline — no validation yet)'}
+                      </td>
+                      <td className="px-3 py-2 text-stone-700">{v ? `${v.rmse} kg` : '—'}</td>
+                      <td className="px-3 py-2 text-stone-700">{v ? `${v.mae} kg` : '—'}</td>
+                      <td className="px-3 py-2 text-stone-700">{v?.mape !== null && v?.mape !== undefined ? `${v.mape}%` : '—'}</td>
+                      <td className="px-3 py-2 text-stone-700">{v?.r2 !== null && v?.r2 !== undefined ? v.r2 : '—'}</td>
+                      <td className="px-3 py-2 text-stone-700">{v ? v.folds : '—'}</td>
+                      <td className="px-3 py-2 text-stone-700">{t.inputs?.comparableCount ?? 0}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {/* END: ModelPerformance */}
+
       {/* Safety Buffer & Recommendations */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <div className="bg-white rounded-2xl border border-[#E3ECE6] p-5 shadow-sm">
@@ -1461,9 +1631,21 @@ function WhyDrawer({ row, onClose }: { row: TargetRow; onClose: () => void }) {
             <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
               <dt className="font-semibold text-stone-700">Predicted Demand ({row.memoryVersion})</dt>
               <dd className="mt-0.5 text-[#0C2741]">
-                (0.6 × baseline {i.baselineKg} + 0.4 × recent trend {i.recentTrendKg}) × menu multiplier {i.menuMultiplier} = <strong>{row.predictedKg} kg</strong>, range {i.lowerKg}–{i.upperKg} kg
+                {i.modelVersion === 'ml-v1' && i.modelName
+                  ? <>ML model {i.modelName}: validated demand forecast × menu multiplier {i.menuMultiplier} = <strong>{row.predictedKg} kg</strong>, range {i.lowerKg}–{i.upperKg} kg</>
+                  : <>(0.6 × baseline {i.baselineKg} + 0.4 × recent trend {i.recentTrendKg}) × menu multiplier {i.menuMultiplier} = <strong>{row.predictedKg} kg</strong>, range {i.lowerKg}–{i.upperKg} kg</>}
               </dd>
             </div>
+            {i.modelVersion === 'ml-v1' && i.validation && (
+              <div className="rounded-xl bg-indigo-50 border border-indigo-200 p-3">
+                <dt className="font-semibold text-indigo-900">ML Validation (rolling-origin, no future leakage)</dt>
+                <dd className="mt-0.5 text-[#0C2741]">
+                  Best of 4 candidates by RMSE over {i.validation.folds} time-ordered folds: RMSE {i.validation.rmse} kg ·
+                  MAE {i.validation.mae} kg · MAPE {i.validation.mape ?? '—'}{i.validation.mape !== null && i.validation.mape !== undefined ? '%' : ''} ·
+                  R² {i.validation.r2 ?? '—'} · trained on {i.comparableCount} actual records.
+                </dd>
+              </div>
+            )}
             <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
               <dt className="font-semibold text-stone-700">Data Confidence: {i.dataConfidence}</dt>
               <dd className="mt-0.5 text-[#0C2741]">

@@ -22,6 +22,7 @@ import redistributionRoutes from './routes/redistribution';
 import impactRoutes from './routes/impact';
 import analyticsRoutes from './routes/analytics';
 import reportsRoutes from './routes/reports';
+import mlRoutes from './routes/ml';
 
 dotenv.config();
 
@@ -100,6 +101,7 @@ export function createApp() {
   app.use('/api/impact', impactRoutes);
   app.use('/api/analytics', analyticsRoutes);
   app.use('/api/reports', reportsRoutes);
+  app.use('/api/ml', mlRoutes);
 
   // 404 for unknown API routes — prevents silent dead ends
   app.use('/api', (_req, res) => {

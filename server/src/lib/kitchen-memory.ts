@@ -144,11 +144,29 @@ export function buildSeries(
 }
 
 /**
+ * Menu multiplier from comparable menu history only, capped to [0.7, 1.3].
+ * 1.0 when either side has <2 samples. Shared by memory-v1 and ml-v1 so both
+ * engines treat menu effects identically.
+ */
+export function menuMultiplierFor(pool: { soldKg: number; onMenu: boolean }[]): {
+  multiplier: number; onMeanKg: number | null; offMeanKg: number | null;
+} {
+  const on = pool.filter((p) => p.onMenu).map((p) => p.soldKg);
+  const off = pool.filter((p) => !p.onMenu).map((p) => p.soldKg);
+  const onMean = on.length > 0 ? mean(on) : null;
+  const offMean = off.length > 0 ? mean(off) : null;
+  let multiplier = 1;
+  if (on.length >= 2 && off.length >= 2 && (offMean ?? 0) > 0) {
+    multiplier = Math.min(1.3, Math.max(0.7, (onMean as number) / (offMean as number)));
+  }
+  return { multiplier, onMeanKg: onMean === null ? null : r3(onMean), offMeanKg: offMean === null ? null : r3(offMean) };
+}
+
+/**
  * Deterministic forecast for a target date:
  * baseline = age-decayed weighted mean of same-weekday sold (weight 1/(1+weeksAgo));
  * recent trend = linear-weighted moving average of last <=6 comparables;
- * menu multiplier = mean(sold|on menu) / mean(sold|off menu) from comparable menu
- * history only, capped to [0.7, 1.3], 1.0 when either side has <2 samples;
+ * menu multiplier = shared menuMultiplierFor() helper, capped to [0.7, 1.3];
  * forecast = (0.6 * baseline + 0.4 * recent) * multiplier;
  * range = forecast +/- stddev of comparable sold values.
  */
@@ -194,14 +212,10 @@ export function forecastForDate(series: MemoryPoint[], targetDate: Date): Foreca
     rSum += w * p.soldKg;
   });
   const recentWma = rSum / rwSum;
-  const on = pool.filter((p) => p.onMenu).map(soldOfPoint);
-  const off = pool.filter((p) => !p.onMenu).map(soldOfPoint);
-  const onMean = on.length > 0 ? mean(on) : null;
-  const offMean = off.length > 0 ? mean(off) : null;
-  let menuMultiplier = 1;
-  if (on.length >= 2 && off.length >= 2 && (offMean ?? 0) > 0) {
-    menuMultiplier = Math.min(1.3, Math.max(0.7, (onMean as number) / (offMean as number)));
-  }
+  const mm = menuMultiplierFor(pool);
+  const menuMultiplier = mm.multiplier;
+  const onMean = mm.onMeanKg;
+  const offMean = mm.offMeanKg;
   const predicted = r3((0.6 * baseline + 0.4 * recentWma) * menuMultiplier);
   const m = mean(pool.map(soldOfPoint));
   const variance = mean(pool.map((p) => (p.soldKg - m) ** 2));
