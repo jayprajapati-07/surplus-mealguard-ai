@@ -32,8 +32,7 @@ describe('geocodeNominatim', () => {
 });
 
 describe('geocodeHotelAddress', () => {
-  it('falls back to country-appended variants when the raw address fails', async () => {
-    const queries = [];
+  it('falls back to country-appended variants when the raw address fails', async () => {    const queries = [];
     globalThis.fetch = (async (url) => {
       queries.push(String(url));
       if (queries.length === 1) return { ok: true, status: 200, json: async () => [] };
@@ -45,6 +44,17 @@ describe('geocodeHotelAddress', () => {
     const g = await geocodeHotelAddress({ address: 'Gota, Ahmedabad, Gujarat', city: 'Ahmedabad', state: null, country: null });
     assert.equal(g?.lat, 23.101);
     assert.ok(queries.length >= 2, 'must retry with a broader variant');
+  });
+
+  it('fixes common state typos and drops to city level for messy addresses', async () => {
+    const queries = [];
+    globalThis.fetch = (async (url) => {
+      queries.push(decodeURIComponent(String(url).split('q=')[1].split('&')[0]));
+      return { ok: true, status: 200, json: async () => [] };
+    });
+    await geocodeHotelAddress({ address: 'Chandansar Rd', city: 'Virar, Mumbai', state: 'Maharastra', country: 'India' });
+    assert.ok(queries.some((q) => q.includes('Maharashtra')), 'must correct the Maharastra typo');
+    assert.ok(queries.some((q) => q === 'Virar, Maharashtra, India'), 'must try a city-level variant');
   });
 });
 

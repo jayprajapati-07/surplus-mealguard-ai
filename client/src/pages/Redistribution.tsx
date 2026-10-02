@@ -71,7 +71,7 @@ interface OverviewNgo {
   verificationStatus: string; verificationSource: string | null;
   mapsUri: string | null; operationalStatus: string | null; source: string;
   lastCheckedAt: string | null; website: string | null;
-  emailVerified: boolean; distanceKm: number | null; relevance: string | null;
+  emailVerified: boolean; distanceKm: number | null; liveDistanceKm: number | null; relevance: string | null;
 }
 interface OverviewHistory {
   id: string; date: string; kitchen: string; createdAt: string; status: string;
@@ -297,7 +297,7 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
     })
     .sort((a, b) => {
       if (sort === 'name') return a.name.localeCompare(b.name);
-      if (sort === 'distance') return (a.distanceKm ?? Number.MAX_SAFE_INTEGER) - (b.distanceKm ?? Number.MAX_SAFE_INTEGER);
+      if (sort === 'distance') return (a.liveDistanceKm ?? a.distanceKm ?? Number.MAX_SAFE_INTEGER) - (b.liveDistanceKm ?? b.distanceKm ?? Number.MAX_SAFE_INTEGER);
       return (b.matchScore ?? -1) - (a.matchScore ?? -1);
     });
 
@@ -623,7 +623,7 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
                   </span>
                     </p>
                     <p className="mt-1.5 font-semibold text-[#0C2741]">
-                      {n.distanceKm !== null ? `${n.distanceKm.toFixed(1)} km away` : 'Distance unavailable'}
+                      {(n.liveDistanceKm ?? n.distanceKm) !== null ? `${((n.liveDistanceKm ?? n.distanceKm) as number).toFixed(1)} km away` : 'Distance unavailable'}
                       {n.sameCity && <span className="ml-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">Same area as your kitchen</span>}
                     </p>
                     <p className="mt-1 text-gray-600">{n.address ?? 'Address unavailable'}</p>

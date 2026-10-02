@@ -8,6 +8,8 @@ import { computeSurplus, predictionError } from '../lib/eod-report';
 import { summarizeDayReport } from '../lib/gemini-explain';
 import { triggerAutoDistribution, type AutoDistributionResult } from '../lib/food-distribution';
 import { scoreNgoMatch } from '../lib/matching';
+import { geocodeHotelAddress } from '../lib/open-geo';
+import { haversineKm } from '../lib/ngo-discovery';
 import { smtpConfigured, resendConfigured } from '../lib/mailer';
 import { getSchedulerState } from '../lib/scheduler-state';
 
@@ -631,6 +633,18 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
               : 'No surplus today';
 
   // — NGO directory (registry + today's live state; scores computed, not stored) —
+  // Locate the hotel on first view when needed (saved for all future calls).
+  let hotelLat = org.latitude;
+  let hotelLng = org.longitude;
+  if ((typeof hotelLat !== 'number' || typeof hotelLng !== 'number')) {
+    const located = await geocodeHotelAddress({ address: org.address, city: org.city, state: org.state, country: org.country });
+    if (located) {
+      await prisma.organization.update({ where: { id: orgId }, data: { latitude: located.lat, longitude: located.lng } }).catch(() => undefined);
+      hotelLat = located.lat;
+      hotelLng = located.lng;
+    }
+  }
+  const hotelHasCoords = typeof hotelLat === 'number' && typeof hotelLng === 'number';
   const institution = { city: org.city, address: org.address, operatingHours: org.operatingHours };
   const need = {
     quantityKg: surplus.surplusKg,
@@ -676,8 +690,23 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
       foodAcceptanceStatus: n.foodAcceptanceStatus,
       distanceKm: typeof n.distanceKm === 'number' ? n.distanceKm : null,
       relevance: n.relevance,
+      liveDistanceKm: hotelHasCoords && typeof n.latitude === 'number' && typeof n.longitude === 'number'
+        ? haversineKm(hotelLat as number, hotelLng as number, n.latitude, n.longitude)
+        : null,
     };
   });
+
+  // Per-hotel view: a Mumbai kitchen must never see Ahmedabad rows. NGOs with
+  // a live distance beyond 100 km are excluded; rows without coordinates
+  // (deliberate admin entries) stay visible last, honestly labeled.
+  const ngosVisible = ngos
+    .filter((n) => !hotelHasCoords || n.liveDistanceKm === null || n.liveDistanceKm <= 100)
+    .sort((a, b) => {
+      if (a.liveDistanceKm !== null || b.liveDistanceKm !== null) {
+        return (a.liveDistanceKm ?? Number.MAX_SAFE_INTEGER) - (b.liveDistanceKm ?? Number.MAX_SAFE_INTEGER);
+      }
+      return (b.matchScore ?? -1) - (a.matchScore ?? -1);
+    });
 
   // — Automation heartbeat (real state only; reads already fetched above) —
   const sched = getSchedulerState();
@@ -810,7 +839,7 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
       acceptedKg, remainingKg: r3(Math.max(0, surplus.surplusKg - acceptedKg)),
       status: distributionStatus,
     },
-    ngos,
+    ngos: ngosVisible,
     automation,
     history,
     activity: activity.slice(0, 20),

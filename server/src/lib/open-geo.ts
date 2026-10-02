@@ -147,17 +147,43 @@ export async function searchOverpassCharities(args: {
   return { places: [], error: { code: 'unavailable', message: `Unable to retrieve nearby organizations right now. ${lastError}`.trim() } };
 }
 
+/** Common Indian state spelling corrections — geocoding input only, never stored. */
+const STATE_FIXES: Record<string, string> = {
+  maharastra: 'Maharashtra',
+  gujrat: 'Gujarat',
+  rajsthan: 'Rajasthan',
+  karnatka: 'Karnataka',
+  tamilnadhu: 'Tamil Nadu',
+  uttarpradesh: 'Uttar Pradesh',
+  madhyapradesh: 'Madhya Pradesh',
+  andhrapradesh: 'Andhra Pradesh',
+  westbengal: 'West Bengal',
+};
+
+function fixState(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const key = s.trim().toLowerCase();
+  return STATE_FIXES[key] ?? s.trim();
+}
+
 /** Hotel address → coordinates with resilient variants.
- * Tries the full address first, then appends the country when missing, then
- * falls back to city-level. Returns the first real hit — never a guess. */
+ * Tries the full address first, then country-appended and progressively
+ * shorter city-level variants with spelling fixes. Returns the first real
+ * hit — never a guess. */
 export async function geocodeHotelAddress(parts: {
   address: string; city: string; state?: string | null; country?: string | null;
 }): Promise<{ lat: number; lng: number; formatted: string } | null> {
-  const base = [parts.address, parts.city, parts.state, parts.country].filter(Boolean).join(', ');
-  const variants = [base];
-  if (!/india/i.test(base)) variants.push(`${base}, India`);
-  if (parts.city) variants.push([parts.city, parts.state, 'India'].filter(Boolean).join(', '));
-  for (const v of [...new Set(variants)].filter((x) => x.trim() !== '')) {
+  const state = fixState(parts.state);
+  const base = [parts.address, parts.city, state, parts.country].filter(Boolean).join(', ');
+  const cityFirst = parts.city.split(',')[0].trim();
+  const variants = [
+    base,
+    !/india/i.test(base) ? `${base}, India` : null,
+    [parts.city, state, 'India'].filter(Boolean).join(', '),
+    [cityFirst, state, 'India'].filter(Boolean).join(', '),
+    [cityFirst, 'India'].filter(Boolean).join(', '),
+  ].filter((x): x is string => !!x && x.trim() !== '');
+  for (const v of [...new Set(variants)]) {
     const g = await geocodeNominatim(v);
     if (g) return g;
   }

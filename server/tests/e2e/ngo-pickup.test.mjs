@@ -1,8 +1,22 @@
 // E2E: eligible surplus -> match -> notify -> accept -> schedule -> handover -> receipt.
 // Uses an API-created NGO (no seed organizations exist anymore).
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { req, auth, login, onboardAs } from '../helpers.mjs';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+let createdNgoId = null;
+after(async () => {
+  if (createdNgoId) {
+    await prisma.ngoMatch.deleteMany({ where: { ngoId: createdNgoId } });
+    await prisma.redistributionRecord.deleteMany({ where: { ngoId: createdNgoId } });
+    await prisma.ngoEmailDelivery.deleteMany({ where: { ngoId: createdNgoId } });
+    await prisma.user.updateMany({ where: { ngoOrganizationId: createdNgoId }, data: { ngoOrganizationId: null } });
+    await prisma.ngoOrganization.deleteMany({ where: { id: createdNgoId } });
+  }
+  await prisma.$disconnect();
+});
 
 describe('journey: NGO acceptance and pickup', () => {
   it('completes a full redistribution with impact', async () => {
@@ -32,6 +46,7 @@ describe('journey: NGO acceptance and pickup', () => {
         acceptedCategories: ['Cooked Veg'], pickupCapable: true, operatingHours: '08:00-20:00' }) });
     assert.equal(nc.status, 201, JSON.stringify(nc.data).slice(0, 200));
     const ngoId = nc.data.ngo.id;
+    createdNgoId = ngoId;
 
     const mt = await req(`/redistribution/matches?assessmentId=${assessId}`, { headers: h });
     assert.equal(mt.status, 200);

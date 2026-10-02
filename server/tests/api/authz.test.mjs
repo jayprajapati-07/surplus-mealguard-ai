@@ -1,7 +1,18 @@
 // API authorization: role gates, org isolation via ID tampering, NGO scoping.
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { req, login, auth, onboardAs } from '../helpers.mjs';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+let createdNgoId = null;
+after(async () => {
+  if (createdNgoId) {
+    await prisma.user.updateMany({ where: { ngoOrganizationId: createdNgoId }, data: { ngoOrganizationId: null } });
+    await prisma.ngoOrganization.deleteMany({ where: { id: createdNgoId } });
+  }
+  await prisma.$disconnect();
+});
 
 const DAY = new Date().toISOString().slice(0, 10);
 let admin, manager, staff, ngo, superT;
@@ -18,6 +29,7 @@ async function seedFixtures() {
   const nc0 = await req('/ngos', { method: 'POST', headers: auth(superT),
     body: JSON.stringify({ name: `Authz Probe NGO ${stamp0}`, city: 'Pune', address: '9 Test Road, Pune' }) });
   if (nc0.status !== 201) throw new Error(`ngo create failed: ${JSON.stringify(nc0.data)}`);
+  createdNgoId = nc0.data.ngo.id;
   const link0 = await req(`/ngos/${nc0.data.ngo.id}/link`, { method: 'POST', headers: auth(superT),
     body: JSON.stringify({ email: 'ngo@mealguard.local' }) });
   if (link0.status !== 200) throw new Error(`ngo link failed: ${JSON.stringify(link0.data)}`);
