@@ -77,4 +77,71 @@ export async function explainPrediction(i: ExplanationInput): Promise<Explanatio
   }
 }
 
-export default { explanationContainsNumbers, templateExplanation, explainPrediction };
+export interface DayReportInput {
+  dateLabel: string;
+  hotelName: string;
+  predictedKg: number | null;
+  producedKg: number;
+  soldKg: number;
+  surplusKg: number;
+  wasteKg: number;
+  inconsistency: boolean;
+}
+
+export function templateDaySummary(i: DayReportInput): string {
+  const head = `Daily food waste report for ${i.hotelName} on ${i.dateLabel}: `;
+  if (i.inconsistency) {
+    return (
+      head +
+      `data inconsistency detected — recorded sold (${i.soldKg} kg) exceeds produced (${i.producedKg} kg). ` +
+      `No surplus forwarded. Please review today's entries.`
+    );
+  }
+  const pred = i.predictedKg === null ? 'no ML prediction was generated that day' : `predicted ${i.predictedKg} kg`;
+  return (
+    head +
+    `${pred}; actually produced ${i.producedKg} kg and sold ${i.soldKg} kg, ` +
+    `leaving ${i.surplusKg} kg surplus food with ${i.wasteKg} kg waste.`
+  );
+}
+
+/** Optional Gemini polish of the deterministic day summary; numbers verified before trusting. */
+export async function summarizeDayReport(i: DayReportInput): Promise<ExplanationOutput> {
+  const fallback = (): ExplanationOutput => ({ text: templateDaySummary(i), source: 'template' });
+  if (!geminiConfigured()) return fallback();
+  try {
+    const key = process.env.GEMINI_API_KEY as string;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+    const prompt =
+      'Rewrite this kitchen report in ONE friendly sentence. Repeat every number exactly, add no new numbers, ' +
+      `and keep the hotel name: ${templateDaySummary(i)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 150 },
+        }),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) return fallback();
+    const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    const text = (data.candidates?.[0]?.content?.parts?.[0]?.text ?? '').trim().slice(0, 600);
+    if (!text) return fallback();
+    const mustEcho = [i.producedKg, i.soldKg, i.surplusKg, i.wasteKg]
+      .concat(i.predictedKg === null ? [] : [i.predictedKg]);
+    if (!explanationContainsNumbers(text, mustEcho)) return fallback();
+    return { text, source: 'gemini' };
+  } catch {
+    return fallback();
+  }
+}
+
+export default { explanationContainsNumbers, templateExplanation, explainPrediction, templateDaySummary, summarizeDayReport };

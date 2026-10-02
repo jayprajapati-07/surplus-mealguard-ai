@@ -4,6 +4,8 @@ import { prisma } from '../prisma';
 import { requireAuth, requireRole, audit, type AuthenticatedRequest } from '../auth';
 import { coherenceError } from '../lib/flow';
 import { dedupeToLatest } from '../lib/kitchen-memory';
+import { computeSurplus, predictionError } from '../lib/eod-report';
+import { summarizeDayReport } from '../lib/gemini-explain';
 
 const router = Router();
 router.use(requireAuth);
@@ -196,8 +198,7 @@ router.post('/reopen', requireRole(...MANAGE_ROLES), async (req: AuthenticatedRe
 });
 
 // GET /api/eod/reports
-router.get('/reports', requireRole(...READ_ROLES), async (req: AuthenticatedRequest, res) => {
-  const schema = z.object({ kitchenUnitId: z.string().min(1).optional(), from: z.string().optional(), to: z.string().optional() });
+router.get('/reports', requireRole(...READ_ROLES), async (req: AuthenticatedRequest, res) => {  const schema = z.object({ kitchenUnitId: z.string().min(1).optional(), from: z.string().optional(), to: z.string().optional() });
   const parsed = schema.safeParse(req.query);
   if (!parsed.success) return zodError(res, parsed.error);
   const orgId = await orgIdFor(req, res);
@@ -229,6 +230,174 @@ router.get('/reports', requireRole(...READ_ROLES), async (req: AuthenticatedRequ
       qualityNotes: r.qualityNotes, reopenedAt: r.reopenedAt, reopenReason: r.reopenReason,
     })),
   });
+});
+
+export interface AutoEodResult {
+  organizationId: string;
+  organizationName: string;
+  kitchenUnitId: string;
+  kitchenName: string;
+  date: string;
+  status: 'created' | 'skipped-empty' | 'skipped-exists' | 'failed';
+  reportId?: string;
+  surplusKg?: number;
+  inconsistency?: boolean;
+  error?: string;
+}
+
+/**
+ * Phase 3 automatic report for one kitchen/day. Sources of truth:
+ * produced/sold/waste = DailyFoodRecord actuals; predicted = ML ProductionTarget;
+ * surplus = computeSurplus() (deterministic, never Gemini, never negative);
+ * summary words = Gemini polish over verified numbers (template fallback).
+ * Never overwrites an existing FINAL report (manual close wins).
+ */
+export async function buildAutoReport(
+  orgId: string, kitchenId: string, day: Date, next: Date, key: string
+): Promise<AutoEodResult> {
+  const base = { organizationId: orgId, kitchenUnitId: kitchenId, date: key };
+  const [kitchen, org] = await Promise.all([
+    prisma.kitchenUnit.findFirst({ where: { id: kitchenId, organizationId: orgId } }),
+    prisma.organization.findUnique({ where: { id: orgId } }),
+  ]);
+  if (!kitchen || !org) {
+    return { ...base, organizationName: org?.name ?? '', kitchenName: kitchen?.name ?? '', status: 'failed', error: 'Kitchen or organization not found.' };
+  }
+  const names = { organizationName: org.name, kitchenName: kitchen.name };
+  const { rows, totals } = await dayAggregate(orgId, kitchen.id, day, next);
+  if (rows.length === 0) return { ...base, ...names, status: 'skipped-empty' };
+  const dupe = await prisma.endOfDayReport.findFirst({
+    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next }, status: 'FINAL' },
+  });
+  if (dupe) return { ...base, ...names, status: 'skipped-exists', reportId: dupe.id };
+
+  const produced = totals.preparedKg;
+  const sold = totals.soldKg;
+  const waste = totals.wasteKg;
+  const s = computeSurplus(produced, sold);
+
+  const targets = await prisma.productionTarget.findMany({
+    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next } },
+    take: 500,
+  });
+  let predicted: number | null = null;
+  const perFood: { food: string; mealType: string; predicted: number; sold: number; absErr: number }[] = [];
+  const rmses: number[] = [];
+  let mlFoods = 0;
+  if (targets.length > 0) {
+    predicted = r3(targets.reduce((x, t) => x + (t.adjustedKg ?? t.recommendedKg), 0));
+    for (const row of rows) {
+      const t = targets.find((x) => x.foodItemId === row.foodItemId && x.mealType === row.mealType);
+      if (!t) continue;
+      const eff = t.adjustedKg ?? t.recommendedKg;
+      perFood.push({ food: row.food, mealType: row.mealType, predicted: eff, sold: row.soldKg, absErr: r3(Math.abs(row.soldKg - eff)) });
+      try {
+        const v = t.inputsJson ? (JSON.parse(t.inputsJson as string) as { modelVersion?: string; validation?: { rmse?: unknown } }) : null;
+        if (v?.modelVersion === 'ml-v1' && typeof v?.validation?.rmse === 'number') {
+          rmses.push(v.validation.rmse as number);
+          mlFoods++;
+        }
+      } catch { /* legacy rows without JSON */ }
+    }
+  }
+  const err = predictionError(predicted, sold);
+  const accuracy = await accuracyFor(orgId, kitchen.id, day, next, rows);
+  const summary = await summarizeDayReport({
+    dateLabel: key, hotelName: org.name, predictedKg: predicted,
+    producedKg: produced, soldKg: sold, surplusKg: s.surplusKg, wasteKg: waste,
+    inconsistency: s.inconsistency,
+  });
+
+  const accuracyPayload = {
+    ...accuracy,
+    autoGenerated: true,
+    predictedKg: predicted, producedKg: produced, soldKg: sold, wasteKg: waste,
+    surplusKg: s.surplusKg, surplusRawKg: s.rawKg,
+    inconsistency: s.inconsistency, inconsistencyMessage: s.message,
+    predictionError: err,
+    mlValidation: mlFoods > 0 ? { foods: mlFoods, avgRmse: r3(rmses.reduce((x, y) => x + y, 0) / rmses.length) } : null,
+    perFood: perFood.slice(0, 100),
+    summary,
+  };
+  const report = await prisma.endOfDayReport.create({
+    data: {
+      organizationId: orgId, kitchenUnitId: kitchen.id, date: day,
+      totalPreparedKg: produced, totalServedKg: totals.servedKg,
+      totalWasteKg: waste, totalSurplusKg: s.surplusKg,
+      notes: `Auto-generated daily food waste report for ${key}.`,
+      status: 'FINAL',
+      accuracyJson: JSON.stringify(accuracyPayload),
+      qualityNotes: `${totals.records} records (${totals.corrections} corrections); auto-generated after 10 PM; ` +
+        `predicted ${predicted ?? 'n/a'} kg vs sold ${sold} kg; surplus ${s.surplusKg} kg` +
+        (s.inconsistency ? ' — DATA INCONSISTENCY FLAGGED, held for review.' : '.'),
+    },
+  });
+  await audit('eod.auto-close', {
+    organizationId: orgId, entityType: 'EndOfDayReport', entityId: report.id,
+    metadata: { kitchenUnitId: kitchen.id, date: key, predictedKg: predicted, produced, sold, surplusKg: s.surplusKg, inconsistency: s.inconsistency },
+  });
+  return { ...base, ...names, status: 'created', reportId: report.id, surplusKg: s.surplusKg, inconsistency: s.inconsistency };
+}
+
+/** Run the after-10PM sweep for every kitchen with records that day. One bad kitchen never blocks the rest. */
+export async function runAutoEodAll(dateISO?: string, onlyOrgId?: string): Promise<{ date: string; results: AutoEodResult[] }> {
+  const ref = dateISO ? new Date(dateISO) : new Date();
+  const day = Number.isNaN(ref.getTime())
+    ? (() => { const n = new Date(); return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())); })()
+    : new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate()));
+  const next = new Date(day.getTime() + 86400000);
+  const key = day.toISOString().slice(0, 10);
+  const combos = await prisma.dailyFoodRecord.findMany({
+    where: { date: { gte: day, lt: next }, ...(onlyOrgId ? { organizationId: onlyOrgId } : {}) },
+    select: { organizationId: true, kitchenUnitId: true },
+    take: 5000,
+  });
+  const seen = new Map<string, { organizationId: string; kitchenUnitId: string }>();
+  for (const c of combos) seen.set(`${c.organizationId}|${c.kitchenUnitId}`, c);
+  const results: AutoEodResult[] = [];
+  for (const c of seen.values()) {
+    try {
+      results.push(await buildAutoReport(c.organizationId, c.kitchenUnitId, day, next, key));
+    } catch (e) {
+      results.push({
+        organizationId: c.organizationId, organizationName: '', kitchenUnitId: c.kitchenUnitId,
+        kitchenName: '', date: key, status: 'failed', error: e instanceof Error ? e.message : 'Auto report failed.',
+      });
+    }
+  }
+  return { date: key, results };
+}
+
+// POST /api/eod/auto-run — manual retry/regenerate for the automatic job (managers).
+router.post('/auto-run', requireRole(...MANAGE_ROLES), async (req: AuthenticatedRequest, res) => {
+  const schema = z.object({ date: z.string().optional() });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success) return zodError(res, parsed.error);
+  if (parsed.data.date && isNaN(new Date(parsed.data.date).getTime())) {
+    return res.status(400).json({ error: 'Date is not valid (use YYYY-MM-DD).' });
+  }
+  const me = await prisma.user.findUnique({ where: { id: req.userId! } });
+  if (!me) return res.status(401).json({ error: 'Account not found.' });
+  const onlyOrg = me.role === 'SUPER_ADMIN' ? undefined : me.organizationId ?? undefined;
+  if (!me.organizationId && me.role !== 'SUPER_ADMIN') {
+    return res.status(404).json({ error: 'No organization yet. Please complete onboarding first.' });
+  }
+  try {
+    const out = await runAutoEodAll(parsed.data.date, onlyOrg);
+    const created = out.results.filter((r) => r.status === 'created').length;
+    const skipped = out.results.filter((r) => r.status !== 'created' && r.status !== 'failed').length;
+    const failed = out.results.filter((r) => r.status === 'failed').length;
+    await audit('eod.auto-run', {
+      userId: req.userId, organizationId: onlyOrg, entityType: 'EndOfDayReport', entityId: out.date,
+      metadata: { date: out.date, created, skipped, failed },
+    });
+    return res.json({
+      message: `Auto-report sweep for ${out.date}: ${created} created, ${skipped} skipped, ${failed} failed.`,
+      date: out.date, created, skipped, failed, results: out.results,
+    });
+  } catch {
+    return res.status(500).json({ error: 'Auto-report sweep failed. Please try again.' });
+  }
 });
 
 export default router;
