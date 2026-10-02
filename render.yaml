@@ -27,6 +27,16 @@ services:
         sync: false # Set in Render Dashboard: Supabase project URL (optional)
       - key: SUPABASE_ANON_KEY
         sync: false # Set in Render Dashboard: Supabase publishable/anon key (optional)
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false # Set in Render Dashboard: Google Cloud API key (Places API New + Geocoding). Restrict to those APIs.
+      - key: GEMINI_API_KEY
+        sync: false # Set in Render Dashboard: Gemini API key for Excel understanding + explanations
+      - key: RESEND_API_KEY
+        sync: false # Set in Render Dashboard: Resend API key for NGO distribution email
+      - key: RESEND_FROM
+        sync: false # Set in Render Dashboard: verified sender, e.g. noreply@yourdomain.org
+      - key: EOD_TIMEZONE
+        value: Asia/Kolkata # IANA zone for the 10 PM auto-report; change to your hotel's zone
 
   # -------------------------------------------------------------
   # 2. Frontend Static Site (React + Vite + Tailwind CSS)

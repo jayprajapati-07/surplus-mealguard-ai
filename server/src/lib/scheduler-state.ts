@@ -13,13 +13,19 @@ export interface SweepSummary {
 const state = {
   armed: false,
   nextRunISO: null as string | null,
+  timeZone: null as string | null,
   lastSweep: null as SweepSummary | null,
   lastError: null as string | null,
 };
 
+export function schedulerTimeZone(): string | undefined {
+  return process.env.EOD_TIMEZONE?.trim() || undefined;
+}
+
 export function setSchedulerArmed(nextRunISO: string): void {
   state.armed = true;
   state.nextRunISO = nextRunISO;
+  state.timeZone = schedulerTimeZone() ?? null;
 }
 
 export function recordSweep(summary: SweepSummary): void {
@@ -36,4 +42,4 @@ export function getSchedulerState() {
   return { ...state };
 }
 
-export default { setSchedulerArmed, recordSweep, recordSchedulerError, getSchedulerState };
+export default { setSchedulerArmed, recordSweep, recordSchedulerError, getSchedulerState, schedulerTimeZone };

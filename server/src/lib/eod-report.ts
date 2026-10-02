@@ -53,12 +53,41 @@ export function shouldAutoRun(now: Date = new Date()): boolean {
   return now.getHours() >= EOD_AUTO_HOUR;
 }
 
-/** Next 22:00 server-local strictly after `now` (schedule the timer for this). */
-export function nextRunAfter(now: Date = new Date()): Date {
-  const next = new Date(now);
-  next.setHours(EOD_AUTO_HOUR, 0, 0, 0);
-  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
-  return next;
+/** Next 22:00 strictly after `now`. With an IANA zone (EOD_TIMEZONE), 22:00 is
+ * hotel time; otherwise server-local time. */
+export function nextRunAfter(now: Date = new Date(), timeZone?: string): Date {
+  if (!timeZone) {
+    const next = new Date(now);
+    next.setHours(EOD_AUTO_HOUR, 0, 0, 0);
+    if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+    return next;
+  }
+  const parts = (d: Date) => {
+    const p = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }).formatToParts(d).map((x) => [x.type, x.value])
+    );
+    return { y: Number(p.year), m: Number(p.month), d: Number(p.day) };
+  };
+  const offsetMs = (d: Date) => {
+    const p = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }).formatToParts(d).map((x) => [x.type, x.value])
+    );
+    return Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute), Number(p.second)) - d.getTime();
+  };
+  for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
+    const base = new Date(now.getTime() + dayOffset * 86400000);
+    const { y, m, d } = parts(base);
+    const guess = new Date(Date.UTC(y, m - 1, d, EOD_AUTO_HOUR, 0, 0, 0));
+    const candidate = new Date(guess.getTime() - offsetMs(guess));
+    if (candidate.getTime() > now.getTime()) return candidate;
+  }
+  return new Date(now.getTime() + 86400000);
 }
 
 export default { EOD_AUTO_HOUR, computeSurplus, predictionError, shouldAutoRun, nextRunAfter };

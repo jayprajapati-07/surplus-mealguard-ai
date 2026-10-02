@@ -82,6 +82,7 @@ interface OverviewHistory {
 interface OverviewActivity { at: string; tone: 'ok' | 'bad' | 'idle'; text: string }
 interface OverviewAutomation {
   state: 'healthy' | 'attention' | 'unknown'; schedulerArmed: boolean; nextRun: string | null;
+  timeZone: string | null;
   lastRun: { at: string; date: string } | null;
   lastSuccess: { at: string } | null;
   lastFailure: { at: string; reason: string | null } | null;
@@ -468,7 +469,7 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
               </div>
               <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
                 <dt className="text-gray-500">Next Automatic Report</dt>
-                <dd className="font-bold text-[#0C2741]">{ov.automation.nextRun ? `After 10:00 PM (${fmtTime(ov.automation.nextRun)})` : 'After 10:00 PM server time'}</dd>
+                <dd className="font-bold text-[#0C2741]">{ov.automation.nextRun ? `After 10:00 PM${ov.automation.timeZone ? ` (${ov.automation.timeZone})` : ''} (${fmtTime(ov.automation.nextRun)})` : 'After 10:00 PM server time'}</dd>
               </div>
               <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
                 <dt className="text-gray-500">Last Report</dt>

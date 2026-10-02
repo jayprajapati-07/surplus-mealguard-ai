@@ -687,6 +687,7 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
     state: automationState,
     schedulerArmed: sched.armed,
     nextRun: sched.nextRunISO,
+    timeZone: sched.timeZone,
     lastRun: lastAutoReport ? { at: lastAutoReport.createdAt, date: lastAutoReport.date.toISOString().slice(0, 10) } : null,
     lastSuccess: lastSuccessAt ? { at: lastSuccessAt, ...(sweepMeta(lastSuccessAudit as { metadataJson: string | null })) } : null,
     lastFailure: lastFailureAt ? { at: lastFailureAt, reason: lastFailureReason } : null,

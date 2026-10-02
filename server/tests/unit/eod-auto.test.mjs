@@ -59,4 +59,13 @@ describe('auto-run schedule', () => {
     assert.equal(after.getHours(), 22);
     assert.equal(after.getDate(), 22);
   });
+
+  it('computes 10 PM in a named timezone (Asia/Kolkata)', () => {
+    // 10:00 UTC = 15:30 IST → next 22:00 IST is 16:30 UTC same day.
+    const n = nextRunAfter(new Date('2026-10-02T10:00:00Z'), 'Asia/Kolkata');
+    assert.equal(n.toISOString(), '2026-10-02T16:30:00.000Z');
+    // 18:00 UTC = 23:30 IST (past 22:00) → next day 16:30 UTC.
+    const n2 = nextRunAfter(new Date('2026-10-02T18:00:00Z'), 'Asia/Kolkata');
+    assert.equal(n2.toISOString(), '2026-10-03T16:30:00.000Z');
+  });
 });

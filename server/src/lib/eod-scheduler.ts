@@ -4,7 +4,7 @@
 // Heartbeat goes to scheduler-state (read by status endpoints) plus an
 // audit row, so the dashboard shows real run history — never hardcoded.
 import { nextRunAfter } from './eod-report';
-import { setSchedulerArmed, recordSweep, recordSchedulerError } from './scheduler-state';
+import { setSchedulerArmed, recordSweep, recordSchedulerError, schedulerTimeZone } from './scheduler-state';
 import { runAutoEodAll } from '../routes/eod';
 import { audit } from '../auth';
 
@@ -37,11 +37,12 @@ async function sweep() {
 export function startEodScheduler(): void {
   if (started) return;
   started = true;
-  const next = nextRunAfter(new Date());
+  const tz = schedulerTimeZone();
+  const next = nextRunAfter(new Date(), tz);
   setSchedulerArmed(next.toISOString());
   const waitMs = Math.max(1000, next.getTime() - Date.now());
   // eslint-disable-next-line no-console
-  console.log(`[eod-scheduler] Armed — next sweep in ${Math.round(waitMs / 60000)} min (after 10 PM server-local).`);
+  console.log(`[eod-scheduler] Armed — next sweep in ${Math.round(waitMs / 60000)} min (after 10 PM ${tz ?? 'server-local time'}).`);
   timer = setTimeout(sweep, waitMs);
 }
 
