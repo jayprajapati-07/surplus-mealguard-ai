@@ -2,6 +2,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import { parse as parseCsv } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, requireRole, audit, type AuthenticatedRequest } from '../auth';
@@ -15,6 +17,7 @@ import {
   unitToKg,
   type ExpectedField,
 } from '../lib/flow';
+import { suggestMappingWithGemini } from '../lib/gemini';
 
 const router = Router();
 
@@ -66,19 +69,13 @@ function toCsv(headers: string[], rows: (string | number | null)[][]): string {
 interface ParsedFile {
   headers: string[];
   rows: Record<string, unknown>[];
+  /** Per-sheet row counts, in workbook order. Empty for CSV. */
+  sheets: { name: string; rows: number }[];
+  /** True when more than one non-empty sheet was combined. */
+  combined: boolean;
 }
 
-function parseFile(buffer: Buffer, filename: string): ParsedFile {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.csv')) {
-    const text = buffer.toString('utf-8');
-    const recs = parseCsv(text, { columns: true, skip_empty_lines: true, trim: true, relax_column_count: true }) as Record<string, unknown>[];
-    const headers = recs.length > 0 ? Object.keys(recs[0]) : [];
-    return { headers, rows: recs };
-  }
-  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  if (!sheet) return { headers: [], rows: [] };
+function sheetToRecords(sheet: XLSX.WorkSheet): { headers: string[]; rows: Record<string, unknown>[] } {
   const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: true });
   const headerIdx = aoa.findIndex((r) => Array.isArray(r) && r.some((c) => String(c ?? '').trim() !== ''));
   if (headerIdx === -1) return { headers: [], rows: [] };
@@ -94,6 +91,68 @@ function parseFile(buffer: Buffer, filename: string): ParsedFile {
     rows.push(obj);
   }
   return { headers, rows };
+}
+
+export function parseFile(buffer: Buffer, filename: string): ParsedFile {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.csv')) {
+    const text = buffer.toString('utf-8');
+    const recs = parseCsv(text, { columns: true, skip_empty_lines: true, trim: true, relax_column_count: true }) as Record<string, unknown>[];
+    const headers = recs.length > 0 ? Object.keys(recs[0]) : [];
+    return { headers, rows: recs, sheets: [], combined: false };
+  }
+  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+  if (!wb.SheetNames || wb.SheetNames.length === 0) return { headers: [], rows: [], sheets: [], combined: false };
+  // Phase 1 rule: combine every non-empty sheet into ONE normalized dataset
+  // (union of headers, first-sheet order preserved). The combined set is what
+  // the user previews and what later feeds ML — never a single silent sheet.
+  const perSheet: { name: string; headers: string[]; rows: Record<string, unknown>[] }[] = [];
+  for (const name of wb.SheetNames) {
+    const sheet = wb.Sheets[name];
+    if (!sheet) continue;
+    const { headers, rows } = sheetToRecords(sheet);
+    if (headers.length === 0 && rows.length === 0) continue;
+    perSheet.push({ name, headers, rows });
+  }
+  if (perSheet.length === 0) return { headers: [], rows: [], sheets: [], combined: false };
+  const headers: string[] = [];
+  for (const s of perSheet) {
+    for (const h of s.headers) {
+      if (h && !headers.includes(h)) headers.push(h);
+    }
+  }
+  const rows: Record<string, unknown>[] = [];
+  for (const s of perSheet) {
+    for (const r of s.rows) {
+      const full: Record<string, unknown> = {};
+      for (const h of headers) full[h] = r[h] ?? '';
+      full._sheet = s.name;
+      rows.push(full);
+    }
+  }
+  // _sheet is traceability metadata, not a data column — strip before mapping.
+  const dataHeaders = headers.filter((h) => h !== '_sheet');
+  return {
+    headers: dataHeaders,
+    rows: rows.map((r) => {
+      const { _sheet, ...rest } = r as Record<string, unknown> & { _sheet?: unknown };
+      return { ...rest, _sheet };
+    }),
+    sheets: perSheet.map((s) => ({ name: s.name, rows: s.rows.length })),
+    combined: perSheet.length > 1,
+  };
+}
+
+/** Original-file preservation: never modify the user's upload; store a byte-identical copy. */
+function preserveOriginalFile(orgId: string, jobTag: string, originalName: string, buffer: Buffer): string {
+  const safeOrg = orgId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeJob = jobTag.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeName = path.basename(originalName).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'upload.xlsx';
+  const dir = path.join(process.cwd(), 'uploads', safeOrg);
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, `${safeJob}-original-${safeName}`);
+  fs.writeFileSync(dest, buffer);
+  return dest;
 }
 
 function cell(row: Record<string, unknown>, col: string | null): unknown {
@@ -116,7 +175,7 @@ router.post(['/parse', '/preview'], requireRole('SUPER_ADMIN', 'INSTITUTION_ADMI
     const f = (req as unknown as { file?: Express.Multer.File }).file;
     if (!f) return res.status(400).json({ error: 'Please choose a .csv, .xlsx, or .xls file first.' });
     try {
-      const { headers, rows } = parseFile(f.buffer, f.originalname);
+      const { headers, rows, sheets, combined } = parseFile(f.buffer, f.originalname);
       if (headers.length === 0) return res.status(400).json({ error: 'No header row found. Use the sample template format.' });
       const { mapping, needsMapping } = suggestMapping(headers);
       const preview = rows.slice(0, 10);
@@ -126,11 +185,15 @@ router.post(['/parse', '/preview'], requireRole('SUPER_ADMIN', 'INSTITUTION_ADMI
         mapping,
         needsMapping,
         rowCount: rows.length,
+        sheets,
+        combined,
         preview: preview.slice(0, 5),
         previewRows: preview,
-        notice: needsMapping
-          ? 'Some columns were uncertain. Please confirm the column mapping before importing.'
-          : 'Columns detected with confidence. You can still adjust the mapping before importing.',
+        notice: combined
+          ? `Multiple sheets detected (${sheets.map((s) => `${s.name}: ${s.rows} rows`).join(', ')}). They were combined into a single dataset of ${rows.length} rows shown below — this combined set is used for import and later ML.`
+          : needsMapping
+            ? 'Some columns were uncertain. Please confirm the column mapping before importing.'
+            : 'Columns detected with confidence. You can still adjust the mapping before importing.',
       });
     } catch {
       return res.status(400).json({ error: 'Could not read this file. Check it matches the sample template.' });
@@ -142,6 +205,71 @@ const confirmSchema = z.object({
   mapping: z.record(z.string()).optional().default({}),
   kitchenUnitId: z.string().min(1, 'Please choose the kitchen/unit this file belongs to.').optional(),
   defaultMeal: z.string().optional(),
+});
+
+// POST /api/imports/gemini-analyze — Gemini-assisted structure understanding (no DB writes).
+// Gemini SUGGESTS a column mapping; every suggestion is validated against actual
+// headers before returning. Any Gemini failure falls back to deterministic mapping
+// so onboarding never blocks. Only headers + a few sample cells are sent to Gemini.
+router.post('/gemini-analyze', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'), (req: AuthenticatedRequest, res) => {
+  upload.single('file')(req as never, res as never, async (err?: unknown) => {
+    if (err) return res.status(400).json({ error: err instanceof Error ? err.message : 'Upload failed.' });
+    const f = (req as unknown as { file?: Express.Multer.File }).file;
+    if (!f) return res.status(400).json({ error: 'Please choose a .csv, .xlsx, or .xls file first.' });
+    try {
+      const { headers, rows, sheets, combined } = parseFile(f.buffer, f.originalname);
+      if (headers.length === 0) return res.status(400).json({ error: 'No header row found. Use the sample template format.' });
+      const assisted = await suggestMappingWithGemini(headers, rows.slice(0, 5));
+      // Summary is computed deterministically from ACTUAL data — never by Gemini.
+      const detCol = (fld: ExpectedField): string | null => assisted.mapping[fld]?.column ?? null;
+      const dateCol = detCol('date');
+      const foodCol = detCol('food');
+      const foods = new Set<string>();
+      let minD: Date | null = null;
+      let maxD: Date | null = null;
+      for (const row of rows) {
+        if (foodCol) {
+          const n = normalizeFoodName(String((row as Record<string, unknown>)[foodCol] ?? ''));
+          if (n) foods.add(n.toLowerCase());
+        }
+        if (dateCol) {
+          const d = parseDateCell((row as Record<string, unknown>)[dateCol]);
+          if (d) {
+            if (!minD || d < minD) minD = d;
+            if (!maxD || d > maxD) maxD = d;
+          }
+        }
+      }
+      const preview = rows.slice(0, 10);
+      return res.json({
+        filename: f.originalname,
+        headers,
+        mapping: assisted.mapping,
+        needsMapping: assisted.needsMapping,
+        source: assisted.source,
+        geminiNotes: assisted.geminiNotes,
+        rowCount: rows.length,
+        sheets,
+        combined,
+        summary: {
+          file: f.originalname,
+          recordsFound: rows.length,
+          foodItems: foods.size,
+          dateRange: minD && maxD
+            ? { from: minD.toISOString().slice(0, 10), to: maxD.toISOString().slice(0, 10) }
+            : null,
+          status: 'Historical data analyzed — review the mapping, then confirm to import.',
+        },
+        preview: preview.slice(0, 5),
+        previewRows: preview,
+        notice: assisted.source === 'gemini'
+          ? 'Gemini understood the file structure; every suggested column was verified against your actual headers.'
+          : 'Gemini was unavailable, so deterministic detection was used. You can still adjust the mapping before importing.',
+      });
+    } catch {
+      return res.status(400).json({ error: 'Could not analyze this file. Check it matches the sample template.' });
+    }
+  });
 });
 
 // POST /api/imports/confirm or /api/imports/execute — validate rows, create records, persist job + row errors
@@ -169,7 +297,7 @@ router.post(['/confirm', '/execute'], requireRole('SUPER_ADMIN', 'INSTITUTION_AD
         return res.status(400).json({ error: first?.message ?? 'Please check the import options.' });
       }
 
-      const { headers, rows } = parseFile(f.buffer, f.originalname);
+      const { headers, rows, sheets, combined } = parseFile(f.buffer, f.originalname);
       if (headers.length === 0) return res.status(400).json({ error: 'No header row found.' });
       const { mapping: suggested } = suggestMapping(headers);
       const col = (field: ExpectedField): string | null => {
@@ -205,6 +333,9 @@ router.post(['/confirm', '/execute'], requireRole('SUPER_ADMIN', 'INSTITUTION_AD
       let duplicates = 0;
       let invalid = 0;
       let skipped = 0;
+      const acceptedFoods = new Set<string>();
+      let minAcceptedDate: Date | null = null;
+      let maxAcceptedDate: Date | null = null;
       const errors: { rowNumber: number; raw: Record<string, unknown>; message: string }[] = [];
 
       const bad = (i: number, row: Record<string, unknown>, message: string) => {
@@ -214,7 +345,9 @@ router.post(['/confirm', '/execute'], requireRole('SUPER_ADMIN', 'INSTITUTION_AD
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        if (Object.values(row).every((v) => String(v ?? '').trim() === '')) {
+        // _sheet is traceability metadata — ignore it when detecting empty rows.
+        const dataCells = Object.entries(row).filter(([k]) => k !== '_sheet');
+        if (dataCells.length === 0 || dataCells.every(([, v]) => String(v ?? '').trim() === '')) {
           skipped++;
           continue;
         }
@@ -325,6 +458,9 @@ router.post(['/confirm', '/execute'], requireRole('SUPER_ADMIN', 'INSTITUTION_AD
           },
         });
         accepted++;
+        acceptedFoods.add(name.toLowerCase());
+        if (!minAcceptedDate || date < minAcceptedDate) minAcceptedDate = date;
+        if (!maxAcceptedDate || date > maxAcceptedDate) maxAcceptedDate = date;
       }
 
       const job = await prisma.importJob.create({
@@ -341,12 +477,23 @@ router.post(['/confirm', '/execute'], requireRole('SUPER_ADMIN', 'INSTITUTION_AD
           },
         },
       });
+      // Preserve the ORIGINAL upload byte-identical (never modified) for traceability.
+      let originalFileRef: string | null = null;
+      try {
+        originalFileRef = preserveOriginalFile(orgId, job.id, f.originalname, f.buffer);
+      } catch {
+        originalFileRef = null;
+      }
       await audit('import.confirm', {
         userId: (req as AuthenticatedRequest).userId,
         organizationId: orgId,
         entityType: 'ImportJob',
         entityId: job.id,
-        metadata: { fileName: f.originalname, accepted, duplicates, invalid, skipped, createdFoods },
+        metadata: {
+          fileName: f.originalname, accepted, duplicates, invalid, skipped, createdFoods,
+          sheets, combined, originalFileRef,
+          mappingUsed: bodyMap,
+        },
       });
       return res.status(201).json({
         message: `Import complete: ${accepted} accepted, ${duplicates} duplicate(s), ${invalid} invalid, ${skipped} skipped.`,
@@ -356,7 +503,24 @@ router.post(['/confirm', '/execute'], requireRole('SUPER_ADMIN', 'INSTITUTION_AD
         invalid,
         skipped,
         createdFoods,
-        summary: { accepted, duplicates, invalid, skipped, createdFoods, totalRows: rows.length },
+        sheets,
+        combined,
+        originalPreserved: originalFileRef !== null,
+        summary: {
+          file: f.originalname,
+          recordsFound: rows.length,
+          accepted,
+          duplicates,
+          invalid,
+          skipped,
+          createdFoods,
+          totalRows: rows.length,
+          foodItems: acceptedFoods.size,
+          dateRange: minAcceptedDate && maxAcceptedDate
+            ? { from: minAcceptedDate.toISOString().slice(0, 10), to: maxAcceptedDate.toISOString().slice(0, 10) }
+            : null,
+          status: '✓ Historical data successfully processed',
+        },
       });
     } catch (e) {
       return res.status(500).json({ error: 'Import failed. Please check the file and try again.' });

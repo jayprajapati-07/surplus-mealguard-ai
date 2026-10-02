@@ -73,6 +73,15 @@ export function SetupPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [previewRows, setPreviewRows] = useState<Array<Record<string, unknown>>>([]);
   const [previewError, setPreviewError] = useState('');
+  const [analyzeSummary, setAnalyzeSummary] = useState<{
+    file: string; recordsFound: number; foodItems: number;
+    dateRange: { from: string; to: string } | null; status: string;
+  } | null>(null);
+  const [analyzeSource, setAnalyzeSource] = useState<'gemini' | 'deterministic' | null>(null);
+  const [analyzeSheets, setAnalyzeSheets] = useState<{ name: string; rows: number }[]>([]);
+  const [analyzeCombined, setAnalyzeCombined] = useState(false);
+  const [analyzeMapping, setAnalyzeMapping] = useState<Record<string, string>>({});
+  const [analyzeNotice, setAnalyzeNotice] = useState('');
   const [manualRecords, setManualRecords] = useState<ManualRecordInput[]>([
     {
       id: 'm1',
@@ -134,14 +143,17 @@ export function SetupPage() {
     setManualRecords((prev) => prev.filter((r) => r.id !== id));
   }
 
-  // File Upload Parser Preview
+  // File Upload Parser Preview — Gemini-assisted with deterministic fallback.
   async function handleFileSelected(selectedFile: File) {
     setFile(selectedFile);
     setPreviewError('');
+    setAnalyzeSummary(null);
+    setAnalyzeSource(null);
+    setAnalyzeSheets([]);
+    setAnalyzeCombined(false);
+    setAnalyzeMapping({});
+    setAnalyzeNotice('');
     setUploadProgress(20);
-
-    const formData = new FormData();
-    formData.append('file', selectedFile);
 
     try {
       setUploadProgress(50);
@@ -149,20 +161,38 @@ export function SetupPage() {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let res = await fetch(`${API_BASE}/imports/parse`, {
+      // Prefer Gemini-assisted analysis; fall back to deterministic parse.
+      let data: {
+        previewRows?: Array<Record<string, unknown>>; preview?: Array<Record<string, unknown>>;
+        mapping?: Record<string, { column: string | null }>; source?: 'gemini' | 'deterministic';
+        summary?: { file: string; recordsFound: number; foodItems: number; dateRange: { from: string; to: string } | null; status: string };
+        sheets?: { name: string; rows: number }[]; combined?: boolean; notice?: string;
+      };
+      const geminiForm = new FormData();
+      geminiForm.append('file', selectedFile);
+      let res = await fetch(`${API_BASE}/imports/gemini-analyze`, {
         method: 'POST',
         headers,
-        body: formData,
+        body: geminiForm,
       });
 
       if (res.status === 404) {
         const retryFormData = new FormData();
         retryFormData.append('file', selectedFile);
-        res = await fetch(`${API_BASE}/imports/preview`, {
+        res = await fetch(`${API_BASE}/imports/parse`, {
           method: 'POST',
           headers,
           body: retryFormData,
         });
+        if (res.status === 404) {
+          const retry2 = new FormData();
+          retry2.append('file', selectedFile);
+          res = await fetch(`${API_BASE}/imports/preview`, {
+            method: 'POST',
+            headers,
+            body: retry2,
+          });
+        }
       }
 
       setUploadProgress(90);
@@ -170,9 +200,21 @@ export function SetupPage() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to parse file preview.');
       }
-      const data = await res.json();
+      data = await res.json();
       const rows = (data.previewRows || data.preview || []) as Array<Record<string, unknown>>;
       setPreviewRows(rows);
+      if (data.summary) setAnalyzeSummary(data.summary);
+      if (data.source) setAnalyzeSource(data.source);
+      if (data.sheets) setAnalyzeSheets(data.sheets);
+      setAnalyzeCombined(!!data.combined);
+      if (data.mapping) {
+        const m: Record<string, string> = {};
+        for (const [k, v] of Object.entries(data.mapping)) {
+          if (v?.column) m[k] = v.column;
+        }
+        setAnalyzeMapping(m);
+      }
+      if (data.notice) setAnalyzeNotice(data.notice);
       setUploadProgress(100);
     } catch (e) {
       setPreviewError(e instanceof Error ? e.message : 'Could not parse data file.');
@@ -337,6 +379,9 @@ export function SetupPage() {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('kitchenUnitId', kitchenId);
+        if (Object.keys(analyzeMapping).length > 0) {
+          formData.append('mapping', JSON.stringify(analyzeMapping));
+        }
         try {
           const token = getToken() ?? localStorage.getItem('mg_token') ?? '';
           const headers: Record<string, string> = {};
@@ -351,6 +396,9 @@ export function SetupPage() {
             const retryFormData = new FormData();
             retryFormData.append('file', file);
             retryFormData.append('kitchenUnitId', kitchenId);
+            if (Object.keys(analyzeMapping).length > 0) {
+              retryFormData.append('mapping', JSON.stringify(analyzeMapping));
+            }
             await fetch(`${API_BASE}/imports/execute`, {
               method: 'POST',
               headers,
@@ -882,6 +930,48 @@ export function SetupPage() {
                         <p className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200">
                           {previewError}
                         </p>
+                      )}
+
+                      {analyzeNotice && (
+                        <p className="text-xs text-blue-900 bg-blue-50 p-2.5 rounded-lg border border-blue-200">
+                          {analyzeSource === 'gemini' ? '✨ Gemini understood this file — ' : ''}{analyzeNotice}
+                        </p>
+                      )}
+
+                      {analyzeCombined && analyzeSheets.length > 1 && (
+                        <p className="text-xs text-stone-700 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+                          📑 Multiple sheets combined into one dataset: {analyzeSheets.map((s) => `${s.name} (${s.rows} rows)`).join(' + ')}. The combined preview below is what will be imported and used for ML.
+                        </p>
+                      )}
+
+                      {analyzeSummary && (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 text-xs" role="status">
+                          <p className="font-bold text-emerald-900">File: {analyzeSummary.file}</p>
+                          <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                            <div className="rounded-lg bg-white p-2 border border-emerald-100">
+                              <dt className="text-stone-500">Records Found</dt>
+                              <dd className="text-base font-bold text-stone-900">{analyzeSummary.recordsFound}</dd>
+                            </div>
+                            <div className="rounded-lg bg-white p-2 border border-emerald-100">
+                              <dt className="text-stone-500">Food Items</dt>
+                              <dd className="text-base font-bold text-stone-900">{analyzeSummary.foodItems}</dd>
+                            </div>
+                            <div className="rounded-lg bg-white p-2 border border-emerald-100 sm:col-span-2">
+                              <dt className="text-stone-500">Date Range</dt>
+                              <dd className="text-sm font-bold text-stone-900">
+                                {analyzeSummary.dateRange ? `${analyzeSummary.dateRange.from} → ${analyzeSummary.dateRange.to}` : '—'}
+                              </dd>
+                            </div>
+                          </dl>
+                          <p className="mt-2 font-semibold text-emerald-800">
+                            ✓ {analyzeSummary.status}
+                            {analyzeSource && (
+                              <span className="ml-1 font-normal text-stone-600">
+                                (understood via {analyzeSource === 'gemini' ? 'Gemini AI + verified mapping' : 'deterministic detection'}; original file preserved unchanged)
+                              </span>
+                            )}
+                          </p>
+                        </div>
                       )}
 
                       {previewRows.length > 0 && (
