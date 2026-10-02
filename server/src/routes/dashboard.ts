@@ -48,23 +48,40 @@ router.get('/overview', requireRole(...READ_ROLES), async (req: AuthenticatedReq
   const nextDay = new Date(day.getTime() + 86400000);
   const lastWeekDay = new Date(day.getTime() - 7 * 86400000);
 
-  const targets = await prisma.productionTarget.findMany({
-    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: nextDay } },
-    orderBy: [{ mealType: 'asc' }],
-    take: 200,
-    include: { foodItem: true },
-  });
-
-  const records = await prisma.dailyFoodRecord.findMany({
-    where: { organizationId: orgId, kitchenUnitId: kitchen.id },
-    orderBy: { date: 'asc' },
-    take: 5000,
-  });
+  // Independent reads run concurrently (single pool, multiplexed connections).
+  const [targets, records, allRecs, bufferRow, activeNgosCount] = await Promise.all([
+    prisma.productionTarget.findMany({
+      where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: nextDay } },
+      orderBy: [{ mealType: 'asc' }],
+      take: 200,
+      include: { foodItem: true },
+    }),
+    prisma.dailyFoodRecord.findMany({
+      // Only today + last-week comparisons are rendered; a 60-day window keeps
+      // the payload small for old kitchens without changing displayed values.
+      where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: new Date(day.getTime() - 60 * 86400000) } },
+      orderBy: { date: 'asc' },
+      take: 5000,
+      select: {
+        id: true, kitchenUnitId: true, foodItemId: true, date: true, mealType: true,
+        targetKg: true, preparedKg: true, servedKg: true, soldKg: true, wasteKg: true,
+        remainingKg: true, adjustmentReason: true, isCorrection: true, createdAt: true,
+      },
+    }),
+    prisma.recommendation.findMany({
+      where: { organizationId: orgId, status: 'PENDING' },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+    }),
+    prisma.bufferConfig.findUnique({ where: { organizationId: orgId } }),
+    prisma.ngoOrganization.count({ where: { isActive: true } }),
+  ]);
   const deduped = dedupeToLatest(records);
   const byKey = new Map(deduped.map((r) => [`${r.foodItemId ?? ''}|${r.mealType}|${utcDayKey(new Date(r.date))}`, r]));
   const dayKey = utcDayKey(day);
   const lastWeekKey = utcDayKey(lastWeekDay);
 
+  const feedbackWrites: Promise<unknown>[] = [];
   const rows = [];
   for (const t of targets) {
     const effective = t.adjustedKg ?? t.recommendedKg;
@@ -75,7 +92,9 @@ router.get('/overview', requireRole(...READ_ROLES), async (req: AuthenticatedReq
     const fresh = JSON.stringify(feedback);
     if (stored !== fresh) {
       // Best-effort feedback refresh — never fail the dashboard read on a write race.
-      await prisma.productionTarget.update({ where: { id: t.id }, data: { feedbackJson: fresh } }).catch(() => undefined);
+      feedbackWrites.push(
+        prisma.productionTarget.update({ where: { id: t.id }, data: { feedbackJson: fresh } }).catch(() => undefined)
+      );
     }
     const lw = byKey.get(`${t.foodItemId}|${t.mealType}|${lastWeekKey}`) ?? null;
     let inputs: unknown = null;
@@ -123,18 +142,13 @@ router.get('/overview', requireRole(...READ_ROLES), async (req: AuthenticatedReq
   }
   if (rows.length > 0 && basedOn === 0) worst = 'low';
 
-  const allRecs = await prisma.recommendation.findMany({
-    where: { organizationId: orgId, status: 'PENDING' },
-    orderBy: { createdAt: 'desc' },
-    take: 30,
-  });
+  // Flush best-effort feedback persistence concurrently (read response never waits serially).
+  await Promise.all(feedbackWrites);
+
   const recommendations = [
     ...allRecs.filter((r) => r.type === 'TARGET_TUNING'),
     ...allRecs.filter((r) => r.type !== 'TARGET_TUNING'),
   ].slice(0, 10);
-
-  const bufferRow = await prisma.bufferConfig.findUnique({ where: { organizationId: orgId } });
-  const activeNgosCount = await prisma.ngoOrganization.count({ where: { isActive: true } });
 
   return res.json({
     date: dayKey,

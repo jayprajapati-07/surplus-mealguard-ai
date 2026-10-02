@@ -91,7 +91,10 @@ router.post('/generate', requireRole(...MANAGE_ROLES), async (req: Authenticated
     ]);
     let created = 0;
     let updated = 0;
-    for (const f of foods) {
+    // Foods are independent (unique target rows per food/meal/date) — run concurrently.
+    const perFood = foods.map((f) => (async () => {
+      let c = 0;
+      let u = 0;
       for (const meal of MEAL_TYPES) {
         const series = buildSeries(records, menus, kitchen.id, f.id, meal);
         if (series.length < 2) continue;
@@ -164,7 +167,7 @@ router.post('/generate', requireRole(...MANAGE_ROLES), async (req: Authenticated
               where: { id: existing.id },
               data: { predictedKg, bufferKg: bKg, recommendedKg: recommended, memoryVersion: modelVersion, inputsJson: JSON.stringify(inputs) },
             });
-            updated++;
+            u++;
           } else {
             await prisma.productionTarget.create({
               data: {
@@ -173,10 +176,15 @@ router.post('/generate', requireRole(...MANAGE_ROLES), async (req: Authenticated
                 status: 'PROPOSED', memoryVersion: modelVersion, inputsJson: JSON.stringify(inputs),
               },
             });
-            created++;
+            c++;
           }
         }
       }
+      return { c, u };
+    })());
+    for (const r of await Promise.all(perFood)) {
+      created += r.c;
+      updated += r.u;
     }
     // TARGET_TUNING recommendations from paired target-vs-actual history.
     const paired = await prisma.productionTarget.findMany({

@@ -112,11 +112,15 @@ router.get('/preview', requireRole(...READ_ROLES), async (req: AuthenticatedRequ
   if (!kitchen) return res.status(400).json({ error: 'Kitchen/unit not found in your organization.' });
   const { day, next, key, error } = parseDay(parsed.data.date);
   if (error || !day || !next || !key) return res.status(400).json({ error: error ?? 'Date is not valid.' });
-  const { rows, totals, incoherent } = await dayAggregate(orgId, kitchen.id, day, next);
+  // Records read and existing-report check are independent — accuracy needs rows, so it follows.
+  const [agg, existing] = await Promise.all([
+    dayAggregate(orgId, kitchen.id, day, next),
+    prisma.endOfDayReport.findFirst({
+      where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next }, status: 'FINAL' },
+    }),
+  ]);
+  const { rows, totals, incoherent } = agg;
   const accuracy = await accuracyFor(orgId, kitchen.id, day, next, rows);
-  const existing = await prisma.endOfDayReport.findFirst({
-    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next }, status: 'FINAL' },
-  });
   return res.json({
     date: key, kitchen: { id: kitchen.id, name: kitchen.name },
     rows, totals, potentialSurplusKg: totals.remainingKg, incoherent,
@@ -139,7 +143,13 @@ router.post('/close', requireRole(...MANAGE_ROLES), async (req: AuthenticatedReq
   if (!kitchen) return res.status(400).json({ error: 'Kitchen/unit not found in your organization.' });
   const { day, next, key, error } = parseDay(parsed.data.date);
   if (error || !day || !next || !key) return res.status(400).json({ error: error ?? 'Date is not valid.' });
-  const { rows, totals, incoherent } = await dayAggregate(orgId, kitchen.id, day, next);
+  const [agg, dupe] = await Promise.all([
+    dayAggregate(orgId, kitchen.id, day, next),
+    prisma.endOfDayReport.findFirst({
+      where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next }, status: 'FINAL' },
+    }),
+  ]);
+  const { rows, totals, incoherent } = agg;
   if (rows.length === 0) {
     return res.status(400).json({ error: 'No food records for this kitchen/date — nothing to close.' });
   }
@@ -149,9 +159,6 @@ router.post('/close', requireRole(...MANAGE_ROLES), async (req: AuthenticatedReq
       incoherent,
     });
   }
-  const dupe = await prisma.endOfDayReport.findFirst({
-    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next }, status: 'FINAL' },
-  });
   if (dupe) {
     return res.status(409).json({ error: 'This kitchen/date is already finalized. Reopen with an audit reason to change it.' });
   }
@@ -520,23 +527,51 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
     }
   };
 
-  // — Today's actuals (database only) —
-  const { rows, totals } = await dayAggregate(orgId, kitchen.id, day, next);
+  // — Independent reads run concurrently (report + registry + history alongside actuals) —
+  const [agg, targets, reportRow, registry, lastAutoReport, sweepAudits, lastEmailNote, historyRows, lastDiscovery, discoveredCount] = await Promise.all([
+    dayAggregate(orgId, kitchen.id, day, next),
+    prisma.productionTarget.findMany({
+      where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next } },
+      take: 500,
+    }),
+    prisma.endOfDayReport.findFirst({
+      where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.ngoOrganization.findMany({ orderBy: { name: 'asc' } }),
+    prisma.endOfDayReport.findFirst({
+      where: { organizationId: orgId, status: 'FINAL' },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.auditLog.findMany({
+      where: { action: 'eod.scheduler-run' },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    }),
+    prisma.notification.findFirst({
+      where: { organizationId: orgId, type: { startsWith: 'NGO_NOTIFY_' } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.endOfDayReport.findMany({
+      where: { organizationId: orgId, status: 'FINAL' },
+      orderBy: { date: 'desc' },
+      take: 30,
+      include: { kitchenUnit: { select: { name: true } } },
+    }),
+    prisma.ngoOrganization.findFirst({
+      where: { source: 'openstreetmap' },
+      orderBy: { lastCheckedAt: 'desc' },
+    }),
+    prisma.ngoOrganization.count({ where: { source: 'openstreetmap' } }),
+  ]);
+  const { rows, totals } = agg;
   const produced = totals.preparedKg;
   const sold = totals.soldKg;
   const waste = totals.wasteKg;
   const surplus = computeSurplus(produced, sold);
-  const targets = await prisma.productionTarget.findMany({
-    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next } },
-    take: 500,
-  });
   const predicted = targets.length > 0 ? r3(targets.reduce((x, t) => x + (t.adjustedKg ?? t.recommendedKg), 0)) : null;
 
   // — Today's report (if generated) —
-  const reportRow = await prisma.endOfDayReport.findFirst({
-    where: { organizationId: orgId, kitchenUnitId: kitchen.id, date: { gte: day, lt: next } },
-    orderBy: { createdAt: 'desc' },
-  });
   const reportAccuracy = reportRow ? safeJson(reportRow.accuracyJson) : null;
   const distPayload = reportAccuracy?.distribution as {
     started?: boolean; reason?: string; assessmentId?: string;
@@ -544,16 +579,16 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
   } | undefined;
   const assessmentId = distPayload?.assessmentId ?? null;
 
-  // — Today's matches + records (live states) —
-  const matches = assessmentId
-    ? await prisma.ngoMatch.findMany({ where: { assessmentId }, include: { ngo: true } })
-    : [];
-  const distRecords = assessmentId
-    ? await prisma.redistributionRecord.findMany({
-      where: { assessmentId },
-      include: { ngo: { select: { id: true, name: true } } },
-    })
-    : [];
+  // — Today's matches + records (live states; depend on the report's assessment) —
+  const [matches, distRecords] = assessmentId
+    ? await Promise.all([
+      prisma.ngoMatch.findMany({ where: { assessmentId }, include: { ngo: true } }),
+      prisma.redistributionRecord.findMany({
+        where: { assessmentId },
+        include: { ngo: { select: { id: true, name: true } } },
+      }),
+    ])
+    : [[], []];
   const recordByNgo = new Map(distRecords.map((r) => [r.ngoId ?? '', r]));
   const emailStateByNgo = new Map<string, { status: string; at: string | null }>();
   for (const m of matches) {
@@ -596,7 +631,6 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
               : 'No surplus today';
 
   // — NGO directory (registry + today's live state; scores computed, not stored) —
-  const registry = await prisma.ngoOrganization.findMany({ orderBy: { name: 'asc' } });
   const institution = { city: org.city, address: org.address, operatingHours: org.operatingHours };
   const need = {
     quantityKg: surplus.surplusKg,
@@ -645,17 +679,8 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
     };
   });
 
-  // — Automation heartbeat (real state only) —
+  // — Automation heartbeat (real state only; reads already fetched above) —
   const sched = getSchedulerState();
-  const lastAutoReport = await prisma.endOfDayReport.findFirst({
-    where: { organizationId: orgId, status: 'FINAL' },
-    orderBy: { createdAt: 'desc' },
-  });
-  const sweepAudits = await prisma.auditLog.findMany({
-    where: { action: 'eod.scheduler-run' },
-    orderBy: { createdAt: 'desc' },
-    take: 5,
-  });
   const sweepMeta = (a: { metadataJson: string | null }) => {
     try {
       return JSON.parse(a.metadataJson ?? '{}') as { date?: string; created?: number; failed?: number; errors?: string[] };
@@ -668,20 +693,11 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
   const lastSuccessAt = lastSuccessAudit?.createdAt?.toISOString() ?? null;
   const lastFailureAt = lastFailureAudit?.createdAt?.toISOString() ?? null;
   const lastFailureReason = lastFailureAudit ? (sweepMeta(lastFailureAudit).errors ?? []).join('; ').slice(0, 300) || 'Sweep reported failures.' : null;
-  const lastEmailNote = await prisma.notification.findFirst({
-    where: { organizationId: orgId, type: { startsWith: 'NGO_NOTIFY_' } },
-    orderBy: { createdAt: 'desc' },
-  });
   const automationState = !sched.armed && !lastSuccessAt && !lastAutoReport
     ? 'unknown'
     : (sched.lastError || (lastFailureAt && (!lastSuccessAt || lastFailureAt > lastSuccessAt)))
       ? 'attention'
       : 'healthy';
-  const lastDiscovery = await prisma.ngoOrganization.findFirst({
-    where: { source: 'openstreetmap' },
-    orderBy: { lastCheckedAt: 'desc' },
-  });
-  const discoveredCount = await prisma.ngoOrganization.count({ where: { source: 'openstreetmap' } });
   const automation = {
     state: automationState,
     schedulerArmed: sched.armed,
@@ -704,13 +720,7 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
     },
   };
 
-  // — History (latest FINAL reports with distribution counts) —
-  const historyRows = await prisma.endOfDayReport.findMany({
-    where: { organizationId: orgId, status: 'FINAL' },
-    orderBy: { date: 'desc' },
-    take: 30,
-    include: { kitchenUnit: { select: { name: true } } },
-  });
+  // — History (latest FINAL reports with distribution counts; already fetched) —
   const history = historyRows.map((h) => {
     const acc = safeJson(h.accuracyJson) as {
       predictedKg?: number | null; surplusKg?: number; autoGenerated?: boolean;

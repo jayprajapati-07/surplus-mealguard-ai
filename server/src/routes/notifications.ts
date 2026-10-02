@@ -57,14 +57,16 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
     if (!me.ngoOrganizationId) {
       return res.status(403).json({ error: 'NGO account is not linked to a registered NGO organization.' });
     }
-    const items = await prisma.notification.findMany({
-      where: { userId: me.id, type: 'NGO_OPPORTUNITY' },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
-    const unreadCount = await prisma.notification.count({
-      where: { userId: me.id, type: 'NGO_OPPORTUNITY', isRead: false },
-    });
+    const [items, unreadCount] = await Promise.all([
+      prisma.notification.findMany({
+        where: { userId: me.id, type: 'NGO_OPPORTUNITY' },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+      prisma.notification.count({
+        where: { userId: me.id, type: 'NGO_OPPORTUNITY', isRead: false },
+      }),
+    ]);
     return res.json({ notifications: items, unreadCount });
   }
   if (!['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER', 'STAFF'].includes(me.role)) {
@@ -72,14 +74,16 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
   }
   const orgId = await orgIdFor(req, res);
   if (!orgId) return;
-  const items = await prisma.notification.findMany({
-    where: { organizationId: orgId, type: { in: INAPP_TYPES } },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-  });
-  const unreadCount = await prisma.notification.count({
-    where: { organizationId: orgId, type: { in: INAPP_TYPES }, isRead: false },
-  });
+  const [items, unreadCount] = await Promise.all([
+    prisma.notification.findMany({
+      where: { organizationId: orgId, type: { in: INAPP_TYPES } },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    }),
+    prisma.notification.count({
+      where: { organizationId: orgId, type: { in: INAPP_TYPES }, isRead: false },
+    }),
+  ]);
   return res.json({ notifications: items, unreadCount });
 });
 

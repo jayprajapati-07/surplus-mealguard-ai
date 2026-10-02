@@ -82,11 +82,13 @@ async function matchOne(ngo: {
 }
 
 async function institutionCtx(orgId: string, assessmentId: string) {
-  const a = await prisma.surplusEligibilityAssessment.findFirst({ where: { id: assessmentId, organizationId: orgId } });
+  const [a, org] = await Promise.all([
+    prisma.surplusEligibilityAssessment.findFirst({ where: { id: assessmentId, organizationId: orgId } }),
+    prisma.organization.findUnique({ where: { id: orgId } }),
+  ]);
   if (!a) return { error: 'Assessment not found in your organization.' as const };
-  const rec = parseRecorded(a);
-  const org = await prisma.organization.findUnique({ where: { id: orgId } });
   if (!org) return { error: 'Organization not found.' as const };
+  const rec = parseRecorded(a);
   return {
     ctx: {
       org: { id: org.id, name: org.name, city: org.city, address: org.address, operatingHours: org.operatingHours,
@@ -129,16 +131,16 @@ router.get('/matches', requireRole(...MANAGE_ROLES), async (req: AuthenticatedRe
     return res.status(400).json({ error: 'Only ELIGIBLE assessments can be matched to NGOs.' });
   }
   const ngos = await prisma.ngoOrganization.findMany({ orderBy: { name: 'asc' } });
-  const out = [];
-  for (const n of ngos) {
+  // Matches are independent rows — score and persist concurrently, order preserved.
+  const out = await Promise.all(ngos.map(async (n) => {
     const r = await matchOne(n, loaded.ctx);
     const row = await upsertMatch(loaded.ctx.assessment.id, n.id, r.score, r.reasons);
-    out.push({
+    return {
       id: row.id, status: row.status, score: r.score, eligible: r.eligible, reasons: r.reasons,
       deliveryAttempts: readAttempts(row),
       ngo: { id: n.id, name: n.name, city: n.city, isActive: n.isActive, acceptedCategories: safeCats(n.acceptedCategories) },
-    });
-  }
+    };
+  }));
   out.sort((a, b) => b.score - a.score);
   return res.json({ assessment: { id: loaded.ctx.assessment.id, food: loaded.ctx.assessment.foodDescription, quantityKg: loaded.ctx.assessment.quantityKg, verdict: 'ELIGIBLE' }, matches: out });
 });
