@@ -3,7 +3,7 @@ import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import gp from '../../src/lib/google-places.ts';
 
-const { googleConfigured, searchTextPlaces, fetchPlaceDetails, geocodeAddress } = gp;
+const { googleConfigured, searchTextPlaces, fetchPlaceDetails, geocodeAddress, geocodeAddressVerbose } = gp;
 const realFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -92,6 +92,23 @@ describe('searchTextPlaces', () => {
       restoreEnv(saved);
     }
   });
+
+  it('surfaces Google auth rejections with the real reason', async () => {
+    const saved = saveEnv();
+    process.env.GOOGLE_MAPS_API_KEY = 'bad-key';
+    globalThis.fetch = (async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: { code: 401, message: 'API keys are not supported by this API.', status: 'UNAUTHENTICATED' } }),
+    }));
+    try {
+      const out = await searchTextPlaces({ query: 'food bank', lat: 23, lng: 72, radiusM: 5000 });
+      assert.equal(out.error?.code, 'forbidden');
+      assert.match(out.error?.message ?? '', /API keys are not supported/);
+    } finally {
+      restoreEnv(saved);
+    }
+  });
 });
 
 describe('fetchPlaceDetails', () => {
@@ -160,6 +177,22 @@ describe('geocodeAddress', () => {
     globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ status: 'ZERO_RESULTS', results: [] }) }));
     try {
       assert.equal(await geocodeAddress('Nowhere XYZ 123'), null);
+    } finally {
+      restoreEnv(saved);
+    }
+  });
+
+  it('reports key denials with the real reason via verbose geocode', async () => {
+    const saved = saveEnv();
+    process.env.GOOGLE_MAPS_API_KEY = 'bad-key';
+    globalThis.fetch = (async () => ({
+      ok: true, status: 200, json: async () => ({ status: 'REQUEST_DENIED', error_message: 'The provided API key is invalid. ', results: [] }),
+    }));
+    try {
+      const out = await geocodeAddressVerbose('Gota, Ahmedabad');
+      assert.equal(out.ok, false);
+      assert.equal(out.failure.code, 'denied');
+      assert.match(out.failure.message, /invalid/);
     } finally {
       restoreEnv(saved);
     }

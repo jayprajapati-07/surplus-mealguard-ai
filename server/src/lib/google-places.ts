@@ -47,17 +47,28 @@ async function timedFetch(url: string, init: RequestInit, ms = 12000): Promise<R
   }
 }
 
-function mapHttpError(status: number): PlacesError {
+function mapHttpError(status: number, detail?: string): PlacesError {
+  const suffix = detail ? ` ${detail}` : '';
   if (status === 429) {
-    return { code: 'quota', message: 'Google Places quota exceeded. Try again later or raise quota in Google Cloud Console.' };
+    return { code: 'quota', message: `Google Places quota exceeded. Try again later or raise quota in Google Cloud Console.${suffix}` };
   }
-  if (status === 403) {
-    return { code: 'forbidden', message: 'Google API key rejected (403). Check key restrictions and enabled APIs.' };
+  if (status === 401 || status === 403) {
+    return { code: 'forbidden', message: `Google rejected the API key (${status}). Check that the key is valid, unrestricted for server use, and that Places API (New) is enabled.${suffix}` };
   }
   if (status === 400) {
-    return { code: 'bad-request', message: 'Google Places rejected the request (400). Check query parameters.' };
+    return { code: 'bad-request', message: `Google Places rejected the request (400). Check query parameters.${suffix}` };
   }
-  return { code: 'http', message: `Google Places request failed (HTTP ${status}).` };
+  return { code: 'http', message: `Google Places request failed (HTTP ${status}).${suffix}` };
+}
+
+/** Google's own error message from a failed response body, or null. Consumes the body. */
+async function googleErrorDetail(res: Response): Promise<string | null> {
+  try {
+    const data = (await res.json()) as { error?: { message?: string }; error_message?: string };
+    if (typeof data?.error?.message === 'string' && data.error.message) return `Google: ${data.error.message}`;
+    if (typeof data?.error_message === 'string' && data.error_message) return `Google: ${data.error_message}`;
+  } catch { /* no usable detail */ }
+  return null;
 }
 
 function toSummary(p: {
@@ -101,7 +112,7 @@ export async function searchTextPlaces(args: {
         rankPreference: 'DISTANCE',
       }),
     });
-    if (!res.ok) return { places: [], error: mapHttpError(res.status) };
+    if (!res.ok) return { places: [], error: mapHttpError(res.status, (await googleErrorDetail(res)) ?? undefined) };
     const data = (await res.json()) as { places?: Parameters<typeof toSummary>[0][] };
     return { places: (data.places ?? []).map(toSummary) };
   } catch (err) {
@@ -132,7 +143,7 @@ export async function fetchPlaceDetails(placeId: string): Promise<PlaceDetails &
       },
     });
     if (!res.ok) {
-      const e = mapHttpError(res.status);
+      const e = mapHttpError(res.status, (await googleErrorDetail(res)) ?? undefined);
       return {
         placeId, name: null, address: null, lat: null, lng: null, businessStatus: null,
         types: [], primaryType: null, mapsUri: null, phone: null, website: null, error: e,
@@ -156,26 +167,52 @@ export async function fetchPlaceDetails(placeId: string): Promise<PlaceDetails &
   }
 }
 
-/** Address → coordinates. Null on zero results or failure (never guessed). */
-export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number; formatted: string } | null> {
-  if (!googleConfigured()) return null;
+export interface GeocodeFailure {
+  code: 'denied' | 'zero-results' | 'unavailable';
+  message: string;
+}
+
+/** Verbose geocode: coordinates on success, the real reason on failure. */
+export async function geocodeAddressVerbose(address: string): Promise<
+  { ok: true; lat: number; lng: number; formatted: string } | { ok: false; failure: GeocodeFailure }
+> {
+  if (!googleConfigured()) {
+    return { ok: false, failure: { code: 'unavailable', message: 'GOOGLE_MAPS_API_KEY is not configured.' } };
+  }
   try {
     const url = `${GEOCODE_URL}?address=${encodeURIComponent(address)}&key=${encodeURIComponent(process.env.GOOGLE_MAPS_API_KEY as string)}`;
     const res = await timedFetch(url, {}, 12000);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const detail = await googleErrorDetail(res);
+      return { ok: false, failure: { code: 'denied', message: detail ?? `Geocoding rejected (HTTP ${res.status}). Check key validity, restrictions, and that Geocoding API is enabled.` } };
+    }
     const data = (await res.json()) as {
-      status?: string;
+      status?: string; error_message?: string;
       results?: { formatted_address?: string; geometry?: { location?: { lat?: number; lng?: number } } }[];
     };
-    if (data.status !== 'OK' || !data.results || data.results.length === 0) return null;
+    if (data.status === 'REQUEST_DENIED') {
+      return { ok: false, failure: { code: 'denied', message: data.error_message ? `Google: ${data.error_message}` : 'Google rejected the key. Check key validity, restrictions, and that Geocoding API is enabled.' } };
+    }
+    if (data.status === 'OVER_QUERY_LIMIT') {
+      return { ok: false, failure: { code: 'denied', message: 'Geocoding quota exceeded. Try again later.' } };
+    }
+    if (data.status !== 'OK' || !data.results || data.results.length === 0) return { ok: false, failure: { code: 'zero-results', message: 'No matching location found.' } };
     const first = data.results[0];
     const lat = first.geometry?.location?.lat;
     const lng = first.geometry?.location?.lng;
-    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
-    return { lat, lng, formatted: first.formatted_address ?? address };
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      return { ok: false, failure: { code: 'zero-results', message: 'No matching location found.' } };
+    }
+    return { ok: true, lat, lng, formatted: first.formatted_address ?? address };
   } catch {
-    return null;
+    return { ok: false, failure: { code: 'unavailable', message: 'Geocoding request failed.' } };
   }
 }
 
-export default { googleConfigured, searchTextPlaces, fetchPlaceDetails, geocodeAddress };
+/** Address → coordinates. Null on zero results or failure (never guessed). */
+export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number; formatted: string } | null> {
+  const out = await geocodeAddressVerbose(address);
+  return out.ok ? { lat: out.lat, lng: out.lng, formatted: out.formatted } : null;
+}
+
+export default { googleConfigured, searchTextPlaces, fetchPlaceDetails, geocodeAddress, geocodeAddressVerbose };

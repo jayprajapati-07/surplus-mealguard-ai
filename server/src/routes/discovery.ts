@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, requireRole, audit, type AuthenticatedRequest } from '../auth';
-import { googleConfigured, searchTextPlaces, fetchPlaceDetails, geocodeAddress } from '../lib/google-places';
+import { googleConfigured, searchTextPlaces, fetchPlaceDetails, geocodeAddressVerbose } from '../lib/google-places';
 import {
   haversineKm, keywordRelevance, inferAcceptance, isCandidate, rankScore,
   dedupeByPlaceId, fetchWebsiteContacts, classifyRelevance,
@@ -45,9 +45,12 @@ async function hotelCoords(orgId: string): Promise<{ lat: number; lng: number; g
     return { lat: org.latitude, lng: org.longitude, geocoded: false };
   }
   const address = [org.address, org.city, org.state, org.country].filter(Boolean).join(', ');
-  const g = await geocodeAddress(address);
-  if (!g) {
-    return { lat: 0, lng: 0, geocoded: false, error: `Could not geocode the hotel address ("${address}"). Update the address or enter coordinates manually.` };
+  const g = await geocodeAddressVerbose(address);
+  if (!g.ok) {
+    const hint = g.failure.code === 'zero-results'
+      ? `Could not geocode the hotel address ("${address}"). Update the address or enter coordinates manually.`
+      : `Could not geocode the hotel address: ${g.failure.message}`;
+    return { lat: 0, lng: 0, geocoded: false, error: hint };
   }
   await prisma.organization.update({ where: { id: orgId }, data: { latitude: g.lat, longitude: g.lng } });
   return { lat: g.lat, lng: g.lng, geocoded: true };
