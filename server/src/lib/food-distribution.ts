@@ -12,11 +12,19 @@ import { audit } from '../auth';
 import { scoreNgoMatch } from './matching';
 import { sendMail } from './mailer';
 import { decideEligibility } from './eligibility';
+import { haversineKm, keywordRelevance, rankScore } from './ngo-discovery';
 
 export const AUTO_MIN_QTY_DEFAULT = 10;
 export const AUTO_NGO_LIMIT = 10;
 
-const r3 = (n: number) => Math.round(n * 1000) / 1000;
+function parseTypes(raw: string | null): string[] {
+  try {
+    const v = JSON.parse(raw ?? '[]') as unknown;
+    return Array.isArray(v) ? v.map((x) => String(x)) : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Stable identity for one hotel + kitchen + day distribution event.
@@ -41,9 +49,10 @@ export function shouldAutoDistribute(args: { surplusKg: number; inconsistency: b
   return { start: true, reason: `Surplus ${args.surplusKg} kg — starting NGO distribution workflow.` };
 }
 
-/** Mailable = active registry entry with a syntactically valid email. Nothing else qualifies. */
-export function isMailableNgo(ngo: { isActive: boolean; contactEmail: string | null }): boolean {
+/** Mailable = active + syntactically valid email + explicitly verified. Nothing else qualifies. */
+export function isMailableNgo(ngo: { isActive: boolean; contactEmail: string | null; emailVerified?: boolean }): boolean {
   if (!ngo.isActive) return false;
+  if (!ngo.emailVerified) return false;
   const email = (ngo.contactEmail ?? '').trim();
   return /^\S+@\S+\.\S+$/.test(email);
 }
@@ -54,32 +63,31 @@ export interface SurplusEmailInput {
   contactPhone: string;
   ngoName: string;
   surplusKg: number;
-  dateLabel: string;
 }
 
-/** Exact spec template filled ONLY with verified application data. */
+/** Redistribution notice filled ONLY with verified application data. */
 export function buildSurplusEmail(i: SurplusEmailInput): { subject: string; text: string } {
-  const subject = `Surplus Food Available from ${i.hotelName} – ${i.dateLabel}`;
+  const subject = `Surplus Food Available for Redistribution – ${i.hotelName}`;
   const text = [
     `Hello ${i.ngoName},`,
     '',
-    `We are from ${i.hotelName}, located in ${i.location}.`,
+    `We are from ${i.hotelName}.`,
     '',
-    `Today we have approximately ${i.surplusKg} kg of surplus food that would otherwise go to waste.`,
+    `Today our hotel has approximately ${i.surplusKg} kg of surplus food available for potential redistribution.`,
     '',
-    'If your organization is interested in collecting or redistributing this food, please contact our hotel management at:',
+    'If your organization is interested in receiving this surplus food, please contact our management team at:',
     '',
     i.contactPhone,
     '',
-    'Food Details:',
+    'Hotel:',
+    i.hotelName,
     '',
-    `Date: ${i.dateLabel}`,
-    `Surplus Quantity: ${i.surplusKg} kg`,
-    `Hotel: ${i.hotelName}`,
-    `Location: ${i.location}`,
+    'Location:',
+    i.location,
     '',
-    'Thank you.',
+    'Thank you for helping us reduce food waste and support the community.',
     '',
+    'Regards,',
     i.hotelName,
   ].join('\n');
   return { subject, text };
@@ -97,7 +105,7 @@ export interface AutoDistributionResult {
   started: boolean;
   reason: string;
   assessmentId?: string;
-  results?: { ngoId: string; ngoName: string; email: string; status: 'sent' | 'failed' | 'skipped-duplicate' | 'skipped-no-email'; error?: string }[];
+  results?: { ngoId: string; ngoName: string; email: string; status: 'sent' | 'failed' | 'skipped-duplicate' | 'skipped-no-email' | 'skipped-unverified' | 'email-unavailable' | 'not-eligible'; error?: string }[];
 }
 
 function readAttempts(deliveryJson: string | null): { at: string; channel: string; ok: boolean; error?: string }[] {
@@ -175,37 +183,83 @@ export async function triggerAutoDistribution(args: {
     return { started: false, reason: 'Existing assessment is not eligible — held for review.', assessmentId: assessment.id };
   }
 
-  // Discover: verified registry only (active + valid email), scored deterministically.
+  // Discover: REAL organizations only — active registry rows with a verified
+  // email and no food refusal. Ranked by the documented transparent formula
+  // (distance + relevance + verification + acceptance) when coordinates exist,
+  // otherwise by the legacy text matcher. Nothing is ever invented.
   const need = {
     quantityKg: assessment.quantityKg,
     foodCategory: 'Mixed Surplus Food',
     availableUntil: new Date(Date.now() + 20 * 3600 * 1000).toISOString(),
   };
   const institution = { city: org.city, address: org.address, operatingHours: org.operatingHours };
-  const ngos = await prisma.ngoOrganization.findMany({ orderBy: { name: 'asc' } });
-  const scored = ngos.map((n) => ({
-    ngo: n,
-    result: scoreNgoMatch({
+  const orgHasCoords = typeof org.latitude === 'number' && typeof org.longitude === 'number';
+  const ngos = await prisma.ngoOrganization.findMany({
+    where: { isActive: true },
+    orderBy: { name: 'asc' },
+  });
+  const ranked = ngos.map((n) => {
+    if (orgHasCoords && typeof n.latitude === 'number' && typeof n.longitude === 'number') {
+      const relevance = (n.relevance === 'high' || n.relevance === 'likely' ? n.relevance : keywordRelevance(n.name, parseTypes(n.googleTypes)).level) as 'high' | 'likely' | 'unknown';
+      const rank = rankScore({
+        distanceKm: haversineKm(org.latitude as number, org.longitude as number, n.latitude as number, n.longitude as number),
+        maxRadiusKm: 50,
+        relevance,
+        verificationStatus: n.verificationStatus,
+        acceptance: (['confirmed', 'likely', 'unknown', 'does_not_accept'].includes(n.foodAcceptanceStatus) ? n.foodAcceptanceStatus : 'unknown') as 'confirmed' | 'likely' | 'unknown' | 'does_not_accept',
+        businessStatus: n.googleBusinessStatus,
+      });
+      const reasons = [
+        { criterion: 'distance', points: rank.parts.distance, detail: `Real distance ${haversineKm(org.latitude as number, org.longitude as number, n.latitude as number, n.longitude as number)} km (40 max).` },
+        { criterion: 'relevance', points: rank.parts.relevance, detail: `Relevance ${relevance} (30/15/5).` },
+        { criterion: 'verification', points: rank.parts.verification, detail: `Verification ${n.verificationStatus} (20/10/0).` },
+        { criterion: 'acceptance', points: rank.parts.acceptance, detail: `Food acceptance ${n.foodAcceptanceStatus} (10/5/0).` },
+      ];
+      return { ngo: n, score: rank.total, reasons };
+    }
+    const result = scoreNgoMatch({
       ngo: {
         isActive: n.isActive, city: n.city, address: n.address,
         acceptedCategories: n.acceptedCategories, pickupCapable: n.pickupCapable,
         operatingHours: n.operatingHours, capacityKg: n.capacityKg,
       },
       assessment: need, institution,
-    }),
-  }));
+    });
+    return { ngo: n, score: result.score, reasons: result.reasons };
+  });
   const candidates = selectTopNgos(
-    scored
-      .filter((s) => s.result.eligible && isMailableNgo({ isActive: s.ngo.isActive, contactEmail: s.ngo.contactEmail }))
-      .map((s) => ({ ngoId: s.ngo.id, score: s.result.score, ngo: s.ngo, reasons: s.result.reasons }))
+    ranked.map((s) => ({ ngoId: s.ngo.id, score: s.score, ngo: s.ngo, reasons: s.reasons }))
   );
 
-  const location = [org.address, org.city].filter(Boolean).join(', ');
+  const location = [org.address, org.city, org.state, org.country].filter(Boolean).join(', ');
   const results: NonNullable<AutoDistributionResult['results']> = [];
+  const deliveryUpsert = (ngoId: string, email: string, data: {
+    status: string; providerMessageId?: string; failureReason?: string; sentAt?: Date;
+  }) => prisma.ngoEmailDelivery.upsert({
+    where: { assessmentId_ngoId_recipientEmail: { assessmentId: assessment.id, ngoId, recipientEmail: email } },
+    update: { ...data, eodReportId: args.eodReportId, organizationId: args.organizationId },
+    create: {
+      organizationId: args.organizationId, eodReportId: args.eodReportId, assessmentId: assessment.id,
+      ngoId, recipientEmail: email, ...data,
+    },
+  });
   for (const c of candidates) {
     const email = (c.ngo.contactEmail ?? '').trim();
+    // Eligibility gates — each outcome stored honestly, nothing sent unless verified.
     if (!email) {
-      results.push({ ngoId: c.ngo.id, ngoName: c.ngo.name, email: '', status: 'skipped-no-email' });
+      await deliveryUpsert(c.ngo.id, '', { status: 'email_unavailable', failureReason: 'Email unavailable — no legitimate email on record. No email sent.' });
+      results.push({ ngoId: c.ngo.id, ngoName: c.ngo.name, email: '', status: 'email-unavailable' });
+      continue;
+    }
+    if (!c.ngo.emailVerified) {
+      await deliveryUpsert(c.ngo.id, email, { status: 'skipped', failureReason: 'Email unverified — admin verification required. No email sent.' });
+      results.push({ ngoId: c.ngo.id, ngoName: c.ngo.name, email, status: 'skipped-unverified' });
+      continue;
+    }
+    if (c.ngo.foodAcceptanceStatus === 'does_not_accept' || c.ngo.googleBusinessStatus === 'CLOSED_PERMANENTLY') {
+      const why = c.ngo.foodAcceptanceStatus === 'does_not_accept' ? 'Organization does not accept surplus food.' : 'Organization is permanently closed.';
+      await deliveryUpsert(c.ngo.id, email, { status: 'not_eligible', failureReason: why });
+      results.push({ ngoId: c.ngo.id, ngoName: c.ngo.name, email, status: 'not-eligible' });
       continue;
     }
     const prev = await prisma.ngoMatch.findUnique({
@@ -240,21 +294,24 @@ export async function triggerAutoDistribution(args: {
     }
     const { subject, text } = buildSurplusEmail({
       hotelName: org.name, location, contactPhone: org.contactPhone,
-      ngoName: c.ngo.name, surplusKg: assessment.quantityKg, dateLabel: args.dateLabel,
+      ngoName: c.ngo.name, surplusKg: assessment.quantityKg,
     });
     const attempt = await sendMail({ to: email, subject, text });
     const attempts = [...readAttempts(match.deliveryJson), attempt];
     await prisma.ngoMatch.update({ where: { id: match.id }, data: { deliveryJson: JSON.stringify({ attempts }) } });
+    await deliveryUpsert(c.ngo.id, email, attempt.ok
+      ? { status: 'sent', providerMessageId: attempt.messageId, sentAt: new Date(attempt.at) }
+      : { status: 'failed', providerMessageId: attempt.messageId, failureReason: attempt.error ?? 'Delivery failed.' });
     await prisma.notification.create({
       data: {
         organizationId: args.organizationId,
         type: attempt.channel === 'simulated' ? 'NGO_NOTIFY_SIMULATED' : attempt.ok ? 'NGO_NOTIFY_SENT' : 'NGO_NOTIFY_FAILED',
         title: `To ${c.ngo.name}: ${subject}`,
         body: attempt.channel === 'simulated'
-          ? `To: ${email}\n${text}\n— simulated local delivery (no SMTP configured; no email was sent).`
+          ? `To: ${email}\n${text}\n— simulated local delivery (no email provider configured; no email was sent).`
           : attempt.ok
-            ? `Delivered via configured SMTP at ${attempt.at}.`
-            : `Delivery via configured SMTP failed at ${attempt.at}: ${attempt.error ?? 'unknown error'}. Use retry.`,
+            ? `Delivered via ${attempt.channel} at ${attempt.at}.`
+            : `Delivery via ${attempt.channel} failed at ${attempt.at}: ${attempt.error ?? 'unknown error'}. Use retry.`,
         linkPath: '/food-distribution',
       },
     });

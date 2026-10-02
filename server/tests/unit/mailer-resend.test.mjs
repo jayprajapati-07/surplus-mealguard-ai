@@ -51,6 +51,7 @@ describe('sendMail via Resend', () => {
       const r = await sendMail({ to: 'ngo@example.org', subject: 'S', text: 'B' });
       assert.equal(r.channel, 'resend');
       assert.equal(r.ok, true);
+      assert.equal(r.messageId, 'test-id');
       assert.equal(calls.length, 1);
       assert.match(String(calls[0].url), /api\.resend\.com\/emails/);
       const body = JSON.parse(calls[0].init.body);

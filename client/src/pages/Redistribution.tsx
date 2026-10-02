@@ -66,8 +66,12 @@ function useMsg() {
 interface OverviewNgo {
   id: string; name: string; city: string | null; address: string | null;
   contactEmail: string | null; contactPhone: string | null; isActive: boolean;
-  sameCity: boolean; acceptance: 'accepting' | 'not-accepting' | 'unknown';
+  sameCity: boolean; acceptance: string;
   matchScore: number | null; emailStatus: string; lastContact: string | null;
+  verificationStatus: string; verificationSource: string | null;
+  googleMapsUri: string | null; googleBusinessStatus: string | null; source: string;
+  lastCheckedAt: string | null; website: string | null;
+  emailVerified: boolean; distanceKm: number | null; relevance: string | null;
 }
 interface OverviewHistory {
   id: string; date: string; kitchen: string; createdAt: string; status: string;
@@ -82,6 +86,7 @@ interface OverviewAutomation {
   lastSuccess: { at: string } | null;
   lastFailure: { at: string; reason: string | null } | null;
   emailService: { configured: boolean; provider?: string | null; lastEmail: { at: string; type: string } | null };
+  ngoDiscovery: { googleConfigured: boolean; hotelCoordsPresent: boolean; lastSearchAt: string | null; discoveredCount: number };
 }
 interface Overview {
   date: string; kitchen: { id: string; name: string }; hotel: { name: string; city: string };
@@ -119,6 +124,17 @@ function fmtTime(iso: string | null): string {
   return isNaN(d.getTime()) ? '—' : d.toLocaleString();
 }
 
+const VERIFICATION_LABELS: Record<string, string> = {
+  unverified: 'Unverified',
+  verification_pending: 'Verification Pending',
+  website_verified: 'Official Website Verified',
+  admin_verified: 'Admin Verified',
+  darpan_verified: 'NGO-DARPAN Verified',
+};
+const ACCEPTANCE_LABELS: Record<string, string> = {
+  confirmed: 'Confirmed', likely: 'Likely', unknown: 'Unknown', does_not_accept: 'Does Not Accept',
+};
+
 /* ---------------- Institution view ---------------- */
 
 function InstitutionView({ canManage }: { canManage: boolean }) {
@@ -152,7 +168,37 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
   const [fStatus, setFStatus] = useState('all');
   const [fEmail, setFEmail] = useState('all');
   const [fAccept, setFAccept] = useState('all');
-  const [sort, setSort] = useState<'match' | 'name'>('match');
+  const [sort, setSort] = useState<'match' | 'name' | 'distance'>('match');
+  const [radiusKm, setRadiusKm] = useState('10');
+  const [discBusy, setDiscBusy] = useState(false);
+  const [discStage, setDiscStage] = useState('');
+  const [discMsg, setDiscMsg] = useState('');
+  const [discError, setDiscError] = useState('');
+
+  async function findNearby() {
+    setDiscBusy(true);
+    setDiscError('');
+    setDiscMsg('');
+    const stages = ['Searching nearby organizations…', 'Reading organization details…', 'Filtering relevant organizations…', 'Verifying available information…'];
+    let i = 0;
+    setDiscStage(stages[0]);
+    const timer = window.setInterval(() => { i = Math.min(i + 1, stages.length - 1); setDiscStage(stages[i]); }, 4000);
+    try {
+      const d = await api<{ message: string; places: unknown[]; radiusUsedKm: number }>(
+        '/discovery/search',
+        { method: 'POST', body: JSON.stringify({ radiusKm: Number(radiusKm) || 10 }) }
+      );
+      setDiscMsg(`${d.message} (searched within ${d.radiusUsedKm} km)`);
+      if (window.showToast) window.showToast('Nearby search finished');
+      await loadOverview(kitchenId);
+    } catch (err) {
+      setDiscError(err instanceof Error ? err.message : 'Unable to retrieve nearby organizations right now.');
+    } finally {
+      window.clearInterval(timer);
+      setDiscStage('');
+      setDiscBusy(false);
+    }
+  }
 
   const loadOverview = useCallback(async (kid: string) => {
     if (!kid) return;
@@ -215,7 +261,7 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
 
   const visibleNgos = (ov?.ngos ?? [])
     .filter((n) => {
-      if (q && !(n.name.toLowerCase().includes(q.toLowerCase()) || (n.city ?? '').toLowerCase().includes(q.toLowerCase()))) return false;
+      if (q && !(n.name.toLowerCase().includes(q.toLowerCase()) || (n.city ?? '').toLowerCase().includes(q.toLowerCase()) || (n.address ?? '').toLowerCase().includes(q.toLowerCase()))) return false;
       if (fStatus === 'active' && !n.isActive) return false;
       if (fStatus === 'inactive' && n.isActive) return false;
       if (fEmail !== 'all') {
@@ -225,7 +271,11 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
       if (fAccept !== 'all' && n.acceptance !== fAccept) return false;
       return true;
     })
-    .sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : (b.matchScore ?? -1) - (a.matchScore ?? -1));
+    .sort((a, b) => {
+      if (sort === 'name') return a.name.localeCompare(b.name);
+      if (sort === 'distance') return (a.distanceKm ?? Number.MAX_SAFE_INTEGER) - (b.distanceKm ?? Number.MAX_SAFE_INTEGER);
+      return (b.matchScore ?? -1) - (a.matchScore ?? -1);
+    });
 
   const loadAssessments = useCallback(async () => {
     try {
@@ -430,6 +480,22 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
                   {ov.automation.emailService.lastEmail ? fmtTime(ov.automation.emailService.lastEmail.at) : 'None yet'}
                 </dd>
               </div>
+              <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
+                <dt className="text-gray-500">NGO Discovery</dt>
+                <dd className="font-bold text-[#0C2741]">
+                  {ov.automation.ngoDiscovery.googleConfigured
+                    ? (ov.automation.ngoDiscovery.lastSearchAt ? `✓ Operational (last search ${fmtTime(ov.automation.ngoDiscovery.lastSearchAt)})` : '✓ Ready — no search run yet')
+                    : '✕ Not configured'}
+                </dd>
+              </div>
+              <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
+                <dt className="text-gray-500">Google Places</dt>
+                <dd className="font-bold text-[#0C2741]">
+                  {ov.automation.ngoDiscovery.googleConfigured
+                    ? `✓ Connected · ${ov.automation.ngoDiscovery.discoveredCount} organizations on file`
+                    : '✕ Error — API key missing'}
+                </dd>
+              </div>
             </dl>
             {ov.automation.state === 'attention' && (
               <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-xs font-semibold text-amber-900" role="alert">
@@ -464,11 +530,29 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
 
           {/* 4 · Nearby NGOs */}
           <div className="rounded-2xl border border-[#E3ECE6] bg-white p-5 md:p-6 shadow-sm" data-purpose="ngo-directory">
-            <h2 className="text-base font-bold text-[#0C2741]">Nearby Food Distribution Organizations ({visibleNgos.length})</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-bold text-[#0C2741]">Nearby Food Distribution Organizations ({visibleNgos.length})</h2>
+              {canManage && (
+                <div className="flex items-center gap-2 text-xs sm:text-sm">
+                  <select aria-label="Search radius" value={radiusKm} onChange={(e) => setRadiusKm(e.target.value)} className={inputCls}>
+                    <option value="5">Within 5 km</option>
+                    <option value="10">Within 10 km</option>
+                    <option value="20">Within 20 km</option>
+                    <option value="50">Within 50 km</option>
+                  </select>
+                  <button onClick={() => void findNearby()} disabled={discBusy} className={btnCls}>
+                    {discBusy ? 'Searching…' : 'Find Nearby Organizations'}
+                  </button>
+                </div>
+              )}
+            </div>
             <p className="mt-0.5 text-xs sm:text-sm text-gray-500">
-              Verified organizations from your registry, ranked for {ov.hotel.city || 'your area'}. Distances aren&apos;t
-              tracked — ranking uses service area, food acceptance, pickup ability, hours and capacity.
+              Real organizations discovered around {ov.hotel.city || 'your area'} via Google Places. A Google listing
+              alone is not verification — check each badge. Distances are measured from your kitchen&apos;s location.
             </p>
+            {discStage && <p className="mt-2 text-xs sm:text-sm font-semibold text-[#006B48]" role="status"><span className="animate-spin inline-block">⏳</span> {discStage}</p>}
+            {discMsg && <p className="mt-2 rounded-xl bg-emerald-50 p-2.5 text-xs font-semibold text-emerald-900 border border-emerald-200" role="status">{discMsg}</p>}
+            {discError && <p className="mt-2 rounded-xl bg-red-50 p-2.5 text-xs font-semibold text-red-800 border border-red-200" role="alert">{discError}</p>}
             <div className="mt-3 grid gap-2 text-xs sm:text-sm sm:grid-cols-5">
               <input aria-label="Search NGOs" placeholder="Search NGOs…" value={q} onChange={(e) => setQ(e.target.value)} className={inputCls} />
               <select aria-label="Filter by status" value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={inputCls}>
@@ -480,15 +564,25 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
                 <option value="not-contacted">Not Contacted</option>
               </select>
               <select aria-label="Filter by food acceptance" value={fAccept} onChange={(e) => setFAccept(e.target.value)} className={inputCls}>
-                <option value="all">Food: All</option><option value="accepting">Accepting</option>
-                <option value="not-accepting">Not Accepting</option><option value="unknown">Unknown</option>
+                <option value="all">Food: All</option><option value="confirmed">Confirmed</option>
+                <option value="likely">Likely</option><option value="unknown">Unknown</option>
+                <option value="does_not_accept">Does Not Accept</option>
               </select>
-              <select aria-label="Sort NGOs" value={sort} onChange={(e) => setSort(e.target.value as 'match' | 'name')} className={inputCls}>
+              <select aria-label="Sort NGOs" value={sort} onChange={(e) => setSort(e.target.value as 'match' | 'name' | 'distance')} className={inputCls}>
                 <option value="match">Sort: Best match</option><option value="name">Sort: Name</option>
+                <option value="distance">Sort: Nearest</option>
               </select>
             </div>
             {visibleNgos.length === 0 ? (
-              <p className="mt-3 text-xs sm:text-sm text-gray-500">No active food-distribution organizations were found.</p>
+              <div className="mt-3 rounded-xl bg-stone-50 border border-[#E3ECE6] p-4 text-xs sm:text-sm text-gray-600">
+                <p className="font-semibold text-[#0C2741]">No verified food-distribution organizations were found near this location.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {canManage && (
+                    <button onClick={() => { setRadiusKm('50'); }} className={ghostCls}>Expand Search Radius</button>
+                  )}
+                  <span className="text-gray-500">A super-admin can also add a verified organization manually in the NGO Registry.</span>
+                </div>
+              </div>
             ) : (
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">
                 {visibleNgos.map((n) => (
@@ -500,21 +594,40 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
                         {n.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </div>
-                    <p className="mt-1 text-gray-600">
-                      {n.city ?? 'Location not listed'}
+                    <p className="mt-1.5">
+                      <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-bold text-blue-900">
+                        {VERIFICATION_LABELS[n.verificationStatus] ?? n.verificationStatus}
+                      </span>{' '}
+                      <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[11px] text-stone-600">
+                        Source: {n.source === 'google_places' ? 'Google Places' : n.source === 'admin' ? 'Admin Entry' : n.source}
+                      </span>
+                    </p>
+                    <p className="mt-1.5 font-semibold text-[#0C2741]">
+                      {n.distanceKm !== null ? `${n.distanceKm.toFixed(1)} km away` : 'Distance unavailable'}
                       {n.sameCity && <span className="ml-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">Same area as your kitchen</span>}
                     </p>
-                    <p className="mt-1 text-gray-600">Email: {n.contactEmail ?? '— no verified email —'}</p>
-                    <p className="text-gray-600">Phone: {n.contactPhone ?? '—'}</p>
+                    <p className="mt-1 text-gray-600">{n.address ?? 'Address unavailable'}</p>
+                    <p className="mt-1 text-gray-600">Phone: {n.contactPhone ?? 'Unavailable'}</p>
+                    <p className="text-gray-600">
+                      Website: {n.website ? <a href={n.website} target="_blank" rel="noreferrer" className="text-[#006B48] font-semibold underline">Official website</a> : 'Unavailable'}
+                    </p>
                     <p className="mt-1 text-gray-600">
-                      Food Acceptance: <strong className="text-[#0C2741]">{
-                        n.acceptance === 'accepting' ? 'Accepting Food' : n.acceptance === 'not-accepting' ? 'Not Accepting' : 'Unknown'
-                      }</strong>
-                      {n.matchScore !== null && <span className="ml-1 text-gray-500">(match {n.matchScore}/100)</span>}
+                      Food Acceptance: <strong className="text-[#0C2741]">{ACCEPTANCE_LABELS[n.acceptance] ?? n.acceptance}</strong>
+                      {n.matchScore !== null && <span className="ml-1 text-gray-500">(rank {n.matchScore}/100)</span>}
+                    </p>
+                    <p className="mt-1 text-gray-600">
+                      Email: {n.contactEmail ? <>{n.contactEmail}{n.emailVerified ? ' (verified)' : ' (unverified — no mail sent)'}</> : 'Unavailable'}
+                    </p>
+                    <p className="text-gray-500">
+                      Operating status: {n.googleBusinessStatus ?? (n.isActive ? 'Active' : 'Inactive')}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#E3ECE6] pt-2">
                       <span className="text-gray-500">Today&apos;s Email: {emailChip(n.emailStatus)}</span>
-                      {n.lastContact && <span className="text-[11px] text-gray-400">Last contact: {fmtTime(n.lastContact)}</span>}
+                      <span className="text-[11px] text-gray-400">Last checked: {fmtTime(n.lastCheckedAt)}</span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">
+                      {n.googleMapsUri && <a href={n.googleMapsUri} target="_blank" rel="noreferrer" className="text-[#006B48] font-semibold underline">View on Google Maps</a>}
+                      {n.lastContact && <span className="text-gray-400">Last contact: {fmtTime(n.lastContact)}</span>}
                     </div>
                   </li>
                 ))}

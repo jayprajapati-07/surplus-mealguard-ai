@@ -23,6 +23,10 @@ export interface Organization {
   operatingHours: string;
   peopleServedDaily: number;
   kitchenCapacityKg: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  state?: string | null;
+  country?: string | null;
   kitchens: Kitchen[];
   profile?: { notes?: string | null; dietaryFocus?: string | null } | null;
 }

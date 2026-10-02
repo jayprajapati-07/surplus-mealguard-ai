@@ -15,8 +15,8 @@ async function req(path, opts = {}) {
 async function main() {
   const results = [];
   const stamp = Date.now();
-  const adminEmail = `accept.admin.${stamp}@test.local`;
-  const staffEmail = `accept.staff.${stamp}@test.local`;
+  const adminEmail = `accept.admin.${stamp}@e2e.mealguard.local`;
+  const staffEmail = `accept.staff.${stamp}@e2e.mealguard.local`;
   const pass = 'TestPass123!';
 
   // 1. signup admin

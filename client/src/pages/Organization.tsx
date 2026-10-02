@@ -10,10 +10,11 @@ export function OrganizationPage() {
   const [isEditingOrg, setIsEditingOrg] = useState(false);
   const [isAddingKitchen, setIsAddingKitchen] = useState(false);
 
-  const [form, setForm] = useState({ address: '', city: '', operatingHours: '', peopleServedDaily: '', kitchenCapacityKg: '' });
+  const [form, setForm] = useState({ address: '', city: '', state: '', country: '', latitude: '', longitude: '', operatingHours: '', peopleServedDaily: '', kitchenCapacityKg: '' });
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [geoBusy, setGeoBusy] = useState(false);
 
   const [kName, setKName] = useState('');
   const [kMeal, setKMeal] = useState('');
@@ -39,6 +40,18 @@ export function OrganizationPage() {
     const payload: Record<string, unknown> = {};
     if (form.address.trim()) payload.address = form.address.trim();
     if (form.city.trim()) payload.city = form.city.trim();
+    if (form.state.trim()) payload.state = form.state.trim();
+    if (form.country.trim()) payload.country = form.country.trim();
+    if (form.latitude.trim()) {
+      const n = Number(form.latitude);
+      if (!Number.isFinite(n) || n < -90 || n > 90) return setError('Latitude must be between -90 and 90.');
+      payload.latitude = n;
+    }
+    if (form.longitude.trim()) {
+      const n = Number(form.longitude);
+      if (!Number.isFinite(n) || n < -180 || n > 180) return setError('Longitude must be between -180 and 180.');
+      payload.longitude = n;
+    }
     if (form.operatingHours.trim()) payload.operatingHours = form.operatingHours.trim();
     if (form.peopleServedDaily.trim()) {
       const n = Number(form.peopleServedDaily);
@@ -55,7 +68,7 @@ export function OrganizationPage() {
     try {
       const data = await api<{ message: string }>('/organizations/mine', { method: 'PUT', body: JSON.stringify(payload) });
       setMsg(data.message);
-      setForm({ address: '', city: '', operatingHours: '', peopleServedDaily: '', kitchenCapacityKg: '' });
+      setForm({ address: '', city: '', state: '', country: '', latitude: '', longitude: '', operatingHours: '', peopleServedDaily: '', kitchenCapacityKg: '' });
       if (window.showToast) window.showToast('Organization settings updated successfully');
       await refresh();
       setIsEditingOrg(false);
@@ -63,6 +76,22 @@ export function OrganizationPage() {
       setError(err instanceof Error ? err.message : 'Update failed.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onGeocode() {
+    setError('');
+    setMsg('');
+    setGeoBusy(true);
+    try {
+      const data = await api<{ message: string; latitude: number | null; longitude: number | null }>('/organizations/geocode', { method: 'POST', body: JSON.stringify({}) });
+      setMsg(`${data.message} (${data.latitude}, ${data.longitude})`);
+      if (window.showToast) window.showToast('Coordinates saved');
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Geocoding failed.');
+    } finally {
+      setGeoBusy(false);
     }
   }
 
@@ -128,6 +157,10 @@ export function OrganizationPage() {
                   setForm({
                     address: org.address || '',
                     city: org.city || '',
+                    state: org.state || '',
+                    country: org.country || '',
+                    latitude: org.latitude != null ? String(org.latitude) : '',
+                    longitude: org.longitude != null ? String(org.longitude) : '',
                     operatingHours: org.operatingHours || '',
                     peopleServedDaily: org.peopleServedDaily ? String(org.peopleServedDaily) : '',
                     kitchenCapacityKg: org.kitchenCapacityKg ? String(org.kitchenCapacityKg) : '',
@@ -158,6 +191,21 @@ export function OrganizationPage() {
             <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
               <dt className="text-gray-500 font-medium">City / Service Area</dt>
               <dd className="text-[#0C2741] font-semibold mt-0.5">{org.city}</dd>
+            </div>
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
+              <dt className="text-gray-500 font-medium">State / Country</dt>
+              <dd className="text-[#0C2741] font-semibold mt-0.5">{[org.state, org.country].filter(Boolean).join(', ') || '—'}</dd>
+            </div>
+            <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
+              <dt className="text-gray-500 font-medium">Map Coordinates (for nearby NGO search)</dt>
+              <dd className="text-[#0C2741] font-semibold mt-0.5">
+                {org.latitude != null && org.longitude != null ? `${org.latitude}, ${org.longitude}` : 'Not set — auto-detected from your address when needed'}
+              </dd>
+              {canEdit && (
+                <button onClick={() => void onGeocode()} disabled={geoBusy} className="mt-2 rounded-lg border border-[#E3ECE6] px-3 py-1.5 text-xs font-semibold text-[#006B48] hover:bg-emerald-50 disabled:opacity-60">
+                  {geoBusy ? 'Detecting…' : 'Detect coordinates from address'}
+                </button>
+              )}
             </div>
             <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
               <dt className="text-gray-500 font-medium">Contact</dt>
@@ -195,6 +243,22 @@ export function OrganizationPage() {
               <div>
                 <label htmlFor="org-city" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">City / Service area</label>
                 <input id="org-city" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className={input} placeholder="e.g. Ahmedabad" />
+              </div>
+              <div>
+                <label htmlFor="org-state" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">State (optional)</label>
+                <input id="org-state" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className={input} placeholder="e.g. Gujarat" />
+              </div>
+              <div>
+                <label htmlFor="org-country" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Country (optional)</label>
+                <input id="org-country" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className={input} placeholder="e.g. India" />
+              </div>
+              <div>
+                <label htmlFor="org-lat" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Latitude (optional)</label>
+                <input id="org-lat" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })} className={input} placeholder="e.g. 23.0225" />
+              </div>
+              <div>
+                <label htmlFor="org-lng" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Longitude (optional)</label>
+                <input id="org-lng" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} className={input} placeholder="e.g. 72.5714" />
               </div>
               <div>
                 <label htmlFor="org-hours" className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Operating hours</label>

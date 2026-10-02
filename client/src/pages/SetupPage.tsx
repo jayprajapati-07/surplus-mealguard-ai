@@ -41,6 +41,8 @@ export function SetupPage() {
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [country, setCountry] = useState('');
   const [contactName, setContactName] = useState(user?.name ?? '');
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState(user?.email ?? '');
@@ -280,6 +282,8 @@ export function SetupPage() {
         name: name.trim(),
         address: address.trim(),
         city: city.trim(),
+        ...(state.trim() ? { state: state.trim() } : {}),
+        ...(country.trim() ? { country: country.trim() } : {}),
         contactName: contactName.trim(),
         contactPhone: contactPhone.trim(),
         contactEmail: contactEmail.trim().toLowerCase(),
@@ -580,6 +584,28 @@ export function SetupPage() {
                           value={city}
                           onChange={(e) => setCity(e.target.value)}
                           placeholder="e.g. Pune"
+                          className="mt-1 w-full rounded-xl border border-stone-300 px-3.5 py-2.5 text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-700">State (optional)</label>
+                        <input
+                          type="text"
+                          value={state}
+                          onChange={(e) => setState(e.target.value)}
+                          placeholder="e.g. Maharashtra"
+                          className="mt-1 w-full rounded-xl border border-stone-300 px-3.5 py-2.5 text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-700">Country (optional)</label>
+                        <input
+                          type="text"
+                          value={country}
+                          onChange={(e) => setCountry(e.target.value)}
+                          placeholder="e.g. India"
                           className="mt-1 w-full rounded-xl border border-stone-300 px-3.5 py-2.5 text-sm"
                         />
                       </div>

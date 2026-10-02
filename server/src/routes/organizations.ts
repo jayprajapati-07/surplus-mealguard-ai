@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, requireRole, audit, type AuthenticatedRequest } from '../auth';
+import { geocodeAddress } from '../lib/google-places';
 
 const router = Router();
 
@@ -29,6 +30,10 @@ const onboardingSchema = z.object({
   peopleServedDaily: z.coerce.number().int('People served must be a whole number.').min(1, 'Must serve at least 1 person daily.').max(1000000, 'Value looks too large.'),
   kitchenCapacityKg: z.coerce.number().positive('Kitchen capacity must be positive (kg).').max(1000000, 'Value looks too large — please check kg value.'),
   kitchens: z.array(kitchenSchema).min(1, 'Add at least one kitchen / unit.'),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
+  state: z.string().trim().max(120).optional(),
+  country: z.string().trim().max(120).optional(),
 });
 
 function zodError(res: import('express').Response, err: z.ZodError) {
@@ -113,6 +118,10 @@ router.put('/mine', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MAN
     operatingHours: z.string().trim().min(3).optional(),
     peopleServedDaily: z.coerce.number().int().min(1).optional(),
     kitchenCapacityKg: z.coerce.number().positive().optional(),
+    latitude: z.coerce.number().min(-90).max(90).optional(),
+    longitude: z.coerce.number().min(-180).max(180).optional(),
+    state: z.string().trim().max(120).optional(),
+    country: z.string().trim().max(120).optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return zodError(res, parsed.error);
@@ -149,6 +158,26 @@ router.post('/kitchens', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHE
   } catch {
     return res.status(500).json({ error: 'Could not add kitchen. The name may already exist.' });
   }
+});
+
+// POST /api/organizations/geocode — resolve the real address to coordinates via Google Geocoding.
+router.post('/geocode', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'), async (req: AuthenticatedRequest, res) => {
+  const me = await prisma.user.findUnique({ where: { id: req.userId! } });
+  if (!me?.organizationId) return res.status(404).json({ error: 'Complete onboarding before geocoding.' });
+  const org = await prisma.organization.findUnique({ where: { id: me.organizationId } });
+  if (!org) return res.status(404).json({ error: 'Organization not found.' });
+  const address = [org.address, org.city, org.state, org.country].filter(Boolean).join(', ');
+  const g = await geocodeAddress(address);
+  if (!g) {
+    return res.status(502).json({ error: `Could not geocode "${address}". Check the address or enter coordinates manually.` });
+  }
+  const updated = await prisma.organization.update({
+    where: { id: org.id },
+    data: { latitude: g.lat, longitude: g.lng },
+  });
+  await audit('org.geocode', { userId: me.id, organizationId: org.id, entityType: 'Organization', entityId: org.id,
+    metadata: { lat: g.lat, lng: g.lng, formatted: g.formatted } });
+  return res.json({ message: 'Location coordinates saved from the registered address.', latitude: updated.latitude, longitude: updated.longitude });
 });
 
 export default router;

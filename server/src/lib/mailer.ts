@@ -9,6 +9,8 @@ export interface MailAttempt {
   channel: 'simulated' | 'smtp' | 'resend';
   ok: boolean;
   error?: string;
+  /** Provider-accepted message id (Resend id / SMTP messageId). Absent when not accepted. */
+  messageId?: string;
 }
 
 export interface MailPayload {
@@ -55,14 +57,28 @@ async function sendViaResend(p: MailPayload, at: string): Promise<MailAttempt> {
       } catch { /* keep generic detail */ }
       return { at, channel: 'resend', ok: false, error: detail };
     }
-    return { at, channel: 'resend', ok: true };
+    let messageId: string | undefined;
+    try {
+      const data = (await res.json()) as { id?: string };
+      if (typeof data?.id === 'string') messageId = data.id;
+    } catch { /* accepted without a parsable id */ }
+    return { at, channel: 'resend', ok: true, ...(messageId ? { messageId } : {}) };
   } catch (err) {
     return { at, channel: 'resend', ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
+function liveSendingAllowed(): boolean {
+  // Automated tests must never bill real providers or deliver real mail.
+  if (process.env.NODE_ENV === 'test' && process.env.MAIL_LIVE_TEST !== '1') return false;
+  return true;
+}
+
 export async function sendMail(p: MailPayload): Promise<MailAttempt> {
   const at = new Date().toISOString();
+  if (!liveSendingAllowed()) {
+    return { at, channel: 'simulated', ok: true };
+  }
   if (resendConfigured()) {
     return sendViaResend(p, at);
   }
@@ -80,13 +96,14 @@ export async function sendMail(p: MailPayload): Promise<MailAttempt> {
       greetingTimeout: 8000,
       socketTimeout: 8000,
     });
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: process.env.SMTP_FROM ?? 'mealguard@localhost',
       to: p.to,
       subject: p.subject,
       text: p.text,
     });
-    return { at, channel: 'smtp', ok: true };
+    const messageId = typeof info?.messageId === 'string' ? info.messageId : undefined;
+    return { at, channel: 'smtp', ok: true, ...(messageId ? { messageId } : {}) };
   } catch (err) {
     return { at, channel: 'smtp', ok: false, error: err instanceof Error ? err.message : String(err) };
   }

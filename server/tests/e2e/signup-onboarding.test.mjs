@@ -18,7 +18,7 @@ describe('journey: signup and onboarding', () => {
 
   it('blocks staff from onboarding', async () => {
     const stamp = Date.now();
-    const email = `e2e-staff.${stamp}@test.local`;
+    const email = `e2e-staff.${stamp}@e2e.mealguard.local`;
     await req('/auth/signup', { method: 'POST', body: JSON.stringify({ name: 'E2E Staff', email, password: 'TestPass123!', role: 'STAFF' }) });
     const l = await req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password: 'TestPass123!' }) });
     assert.equal(l.status, 200, `login failed: ${JSON.stringify(l.data)}`);

@@ -13,6 +13,14 @@ async function seedFixtures() {
   staff = await login('staff@mealguard.local', 'Staff12345!');
   ngo = await login('ngo@mealguard.local', 'Ngo123456!');
   superT = await login('superadmin@mealguard.local', 'SuperAdmin123!');
+  // Link the demo NGO login to a real API-created registry row (no seed NGOs exist).
+  const stamp0 = Date.now();
+  const nc0 = await req('/ngos', { method: 'POST', headers: auth(superT),
+    body: JSON.stringify({ name: `Authz Probe NGO ${stamp0}`, city: 'Pune', address: '9 Test Road, Pune' }) });
+  if (nc0.status !== 201) throw new Error(`ngo create failed: ${JSON.stringify(nc0.data)}`);
+  const link0 = await req(`/ngos/${nc0.data.ngo.id}/link`, { method: 'POST', headers: auth(superT),
+    body: JSON.stringify({ email: 'ngo@mealguard.local' }) });
+  if (link0.status !== 200) throw new Error(`ngo link failed: ${JSON.stringify(link0.data)}`);
   const me = await req('/auth/me', { headers: auth(admin) });
   kitchenId = me.data.user.organization.kitchens[0].id;
   const stamp = Date.now();

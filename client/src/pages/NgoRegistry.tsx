@@ -4,13 +4,32 @@ import { api } from '../api';
 interface Ngo {
   id: string; name: string; address: string | null; city: string | null;
   contactName: string | null; contactEmail: string | null; contactPhone: string | null;
+  website: string | null;
   acceptedCategories: string[]; pickupCapable: boolean; operatingHours: string | null;
   capacityKg: number | null; isActive: boolean;
+  googlePlaceId: string | null; googleMapsUri: string | null; googleBusinessStatus: string | null;
+  source: string; lastCheckedAt: string | null;
+  verificationStatus: string; verificationSource: string | null; ngoDarpanId: string | null;
+  emailSource: string | null; emailVerified: boolean;
+  foodAcceptanceStatus: string; acceptsCookedFood: boolean | null;
+  acceptsPreparedFood: boolean | null; acceptsPackagedFood: boolean | null;
+  distanceKm: number | null; relevance: string | null;
 }
 
 const empty = {
-  name: '', contactName: '', email: '', phone: '', city: '', address: '',
+  name: '', contactName: '', email: '', phone: '', city: '', address: '', website: '',
   acceptedCategories: '', pickupCapable: true, operatingHours: '', capacityKg: '', isActive: true,
+  emailVerified: false, verificationStatus: 'unverified', verificationSource: '', ngoDarpanId: '',
+  foodAcceptanceStatus: 'unknown', acceptsCookedFood: false, acceptsPreparedFood: false, acceptsPackagedFood: false,
+};
+
+const VERIFICATION_LABELS: Record<string, string> = {
+  unverified: 'Unverified', verification_pending: 'Verification Pending',
+  website_verified: 'Official Website Verified', admin_verified: 'Admin Verified',
+  darpan_verified: 'NGO-DARPAN Verified',
+};
+const ACCEPTANCE_LABELS: Record<string, string> = {
+  confirmed: 'Confirmed', likely: 'Likely', unknown: 'Unknown', does_not_accept: 'Does Not Accept',
 };
 
 export function NgoRegistry() {
@@ -41,10 +60,15 @@ export function NgoRegistry() {
     setEditingId(n.id);
     setForm({
       name: n.name, contactName: n.contactName ?? '', email: n.contactEmail ?? '',
-      phone: n.contactPhone ?? '', city: n.city ?? '', address: n.address ?? '',
+      phone: n.contactPhone ?? '', city: n.city ?? '', address: n.address ?? '', website: n.website ?? '',
       acceptedCategories: n.acceptedCategories.join(', '), pickupCapable: n.pickupCapable,
       operatingHours: n.operatingHours ?? '', capacityKg: n.capacityKg !== null ? String(n.capacityKg) : '',
-      isActive: n.isActive,
+      isActive: n.isActive, emailVerified: n.emailVerified,
+      verificationStatus: n.verificationStatus, verificationSource: n.verificationSource ?? '',
+      ngoDarpanId: n.ngoDarpanId ?? '', foodAcceptanceStatus: n.foodAcceptanceStatus,
+      acceptsCookedFood: n.acceptsCookedFood ?? false,
+      acceptsPreparedFood: n.acceptsPreparedFood ?? false,
+      acceptsPackagedFood: n.acceptsPackagedFood ?? false,
     });
     setError('');
     setMsg('');
@@ -63,11 +87,20 @@ export function NgoRegistry() {
         phone: form.phone.trim() || undefined,
         city: form.city.trim() || undefined,
         address: form.address.trim() || undefined,
+        website: form.website.trim() || undefined,
         acceptedCategories: form.acceptedCategories.trim() || undefined,
         pickupCapable: form.pickupCapable,
         operatingHours: form.operatingHours.trim() || undefined,
         capacityKg: form.capacityKg.trim() === '' ? undefined : Number(form.capacityKg),
         isActive: form.isActive,
+        emailVerified: form.emailVerified,
+        verificationStatus: form.verificationStatus,
+        verificationSource: form.verificationSource.trim() || undefined,
+        ngoDarpanId: form.ngoDarpanId.trim() || undefined,
+        foodAcceptanceStatus: form.foodAcceptanceStatus,
+        acceptsCookedFood: form.acceptsCookedFood,
+        acceptsPreparedFood: form.acceptsPreparedFood,
+        acceptsPackagedFood: form.acceptsPackagedFood,
       };
       if (editingId) {
         await api(`/ngos/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -134,6 +167,28 @@ export function NgoRegistry() {
             <input id="ngo-hours" value={form.operatingHours} onChange={set('operatingHours')} className={inputCls} /></div>
           <div><label htmlFor="ngo-cap" className="text-sm font-medium">Capacity kg per pickup (blank = unstated)</label>
             <input id="ngo-cap" type="number" min="0.01" step="0.1" value={form.capacityKg} onChange={set('capacityKg')} className={inputCls} /></div>
+          <div><label htmlFor="ngo-web" className="text-sm font-medium">Website (only the real official URL)</label>
+            <input id="ngo-web" value={form.website} onChange={set('website')} placeholder="https://…" className={inputCls} /></div>
+          <div><label htmlFor="ngo-ver" className="text-sm font-medium">Verification status</label>
+            <select id="ngo-ver" value={form.verificationStatus} onChange={(e) => setForm((f) => ({ ...f, verificationStatus: e.target.value }))} className={inputCls}>
+              {Object.entries(VERIFICATION_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select></div>
+          <div><label htmlFor="ngo-versrc" className="text-sm font-medium">Verification source / evidence</label>
+            <input id="ngo-versrc" value={form.verificationSource} onChange={set('verificationSource')} placeholder="e.g. checked official site on 2026-10-03" className={inputCls} /></div>
+          <div><label htmlFor="ngo-darpan" className="text-sm font-medium">NGO-DARPAN ID (admin-entered only)</label>
+            <input id="ngo-darpan" value={form.ngoDarpanId} onChange={set('ngoDarpanId')} className={inputCls} /></div>
+          <div><label htmlFor="ngo-acc" className="text-sm font-medium">Food acceptance (only with evidence)</label>
+            <select id="ngo-acc" value={form.foodAcceptanceStatus} onChange={(e) => setForm((f) => ({ ...f, foodAcceptanceStatus: e.target.value }))} className={inputCls}>
+              {Object.entries(ACCEPTANCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select></div>
+          <div className="flex items-end gap-4 pb-2 text-sm sm:col-span-2">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={form.emailVerified} onChange={set('emailVerified')} /> Email verified (only tick for a genuinely verified address)</label>
+          </div>
+          <div className="flex items-end gap-4 pb-2 text-sm">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={form.acceptsCookedFood} onChange={set('acceptsCookedFood')} /> Accepts cooked</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={form.acceptsPreparedFood} onChange={set('acceptsPreparedFood')} /> Accepts prepared</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={form.acceptsPackagedFood} onChange={set('acceptsPackagedFood')} /> Accepts packaged</label>
+          </div>
           <div className="flex items-end gap-4 pb-2 text-sm">
             <label className="flex items-center gap-2"><input type="checkbox" checked={form.pickupCapable} onChange={set('pickupCapable')} /> Pickup capable</label>
             <label className="flex items-center gap-2"><input type="checkbox" checked={form.isActive} onChange={set('isActive')} /> Active</label>
@@ -160,10 +215,21 @@ export function NgoRegistry() {
                   <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${n.isActive ? 'bg-leaf-100 text-leaf-900' : 'bg-stone-200 text-stone-700'}`}>
                     {n.isActive ? 'active' : 'inactive'}
                   </span>
+                  <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-900" title="Verification source">
+                    {VERIFICATION_LABELS[n.verificationStatus] ?? n.verificationStatus}
+                  </span>
+                  <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-900" title="Food acceptance">
+                    Food: {ACCEPTANCE_LABELS[n.foodAcceptanceStatus] ?? n.foodAcceptanceStatus}
+                  </span>
+                  <span className="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-600" title="Discovery source">
+                    {n.source === 'google_places' ? 'Google Places' : n.source}
+                  </span>
                 </div>
                 <p className="mt-1 text-sm text-stone-600">
-                  {[n.contactName, n.contactEmail, n.contactPhone].filter(Boolean).join(' · ') || 'No contact recorded'}
+                  {[n.contactName, n.contactEmail ? `${n.contactEmail}${n.emailVerified ? ' (verified)' : ' (unverified — no mail sent)'}` : 'Email unavailable', n.contactPhone ?? 'Phone unavailable'].filter(Boolean).join(' · ')}
                 </p>
+                {n.website && <p className="text-sm"><a href={n.website} target="_blank" rel="noreferrer" className="text-leaf-800 underline">Official website</a></p>}
+                {n.googleMapsUri && <p className="text-sm"><a href={n.googleMapsUri} target="_blank" rel="noreferrer" className="text-leaf-800 underline">View on Google Maps</a></p>}
                 <p className="text-sm text-stone-600">
                   {[n.city, n.address].filter(Boolean).join(', ') || 'No service area recorded'} ·
                   accepts {n.acceptedCategories.join(', ') || 'nothing listed'} ·

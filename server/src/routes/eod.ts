@@ -9,6 +9,7 @@ import { summarizeDayReport } from '../lib/gemini-explain';
 import { triggerAutoDistribution, type AutoDistributionResult } from '../lib/food-distribution';
 import { scoreNgoMatch } from '../lib/matching';
 import { smtpConfigured, resendConfigured } from '../lib/mailer';
+import { googleConfigured } from '../lib/google-places';
 import { getSchedulerState } from '../lib/scheduler-state';
 
 const router = Router();
@@ -629,9 +630,19 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
       id: n.id, name: n.name, city: n.city, address: n.address,
       contactEmail: n.contactEmail, contactPhone: n.contactPhone, isActive: n.isActive,
       sameCity: (area?.points ?? 0) > 0,
-      acceptance: reasons.length === 0 ? 'unknown' : (cat && cat.points > 0 ? 'accepting' : 'not-accepting'),
+      acceptance: (['confirmed', 'likely', 'unknown', 'does_not_accept'].includes(n.foodAcceptanceStatus)
+        ? n.foodAcceptanceStatus
+        : 'unknown') as string,
       matchScore: stored?.score ?? scored?.score ?? null,
       emailStatus: email.status, lastContact: email.at,
+      verificationStatus: n.verificationStatus, verificationSource: n.verificationSource,
+      googlePlaceId: n.googlePlaceId, googleMapsUri: n.googleMapsUri,
+      googleBusinessStatus: n.googleBusinessStatus, source: n.source,
+      lastCheckedAt: n.lastCheckedAt, website: n.website,
+      emailVerified: n.emailVerified, emailSource: n.emailSource,
+      foodAcceptanceStatus: n.foodAcceptanceStatus,
+      distanceKm: typeof n.distanceKm === 'number' ? n.distanceKm : null,
+      relevance: n.relevance,
     };
   });
 
@@ -667,6 +678,11 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
     : (sched.lastError || (lastFailureAt && (!lastSuccessAt || lastFailureAt > lastSuccessAt)))
       ? 'attention'
       : 'healthy';
+  const lastDiscovery = await prisma.ngoOrganization.findFirst({
+    where: { source: 'google_places' },
+    orderBy: { lastCheckedAt: 'desc' },
+  });
+  const discoveredCount = await prisma.ngoOrganization.count({ where: { source: 'google_places' } });
   const automation = {
     state: automationState,
     schedulerArmed: sched.armed,
@@ -678,6 +694,12 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
       configured: smtpConfigured() || resendConfigured(),
       provider: resendConfigured() ? 'resend' : smtpConfigured() ? 'smtp' : null,
       lastEmail: lastEmailNote ? { at: lastEmailNote.createdAt, type: lastEmailNote.type } : null,
+    },
+    ngoDiscovery: {
+      googleConfigured: googleConfigured(),
+      hotelCoordsPresent: typeof org.latitude === 'number' && typeof org.longitude === 'number',
+      lastSearchAt: lastDiscovery?.lastCheckedAt ?? null,
+      discoveredCount,
     },
   };
 

@@ -290,16 +290,7 @@ router.post('/auto-retry', requireRole(...MANAGE_ROLES), async (req: Authenticat
   if (!assessment) return res.status(404).json({ error: 'Assessment not found in your organization.' });
   const org = await prisma.organization.findUnique({ where: { id: orgId } });
   if (!org) return res.status(500).json({ error: 'Organization not found.' });
-  let recorded: { eodReportId?: string } = {};
-  try {
-    recorded = JSON.parse(assessment.recordedInfoJson ?? '{}') as typeof recorded;
-  } catch { /* keep defaults */ }
-  let dateLabel = assessment.foodDescription.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? new Date().toISOString().slice(0, 10);
-  if (recorded.eodReportId) {
-    const rep = await prisma.endOfDayReport.findUnique({ where: { id: recorded.eodReportId } });
-    if (rep) dateLabel = rep.date.toISOString().slice(0, 10);
-  }
-  const location = [org.address, org.city].filter(Boolean).join(', ');
+  const location = [org.address, org.city, org.state, org.country].filter(Boolean).join(', ');
   const matches = await prisma.ngoMatch.findMany({
     where: { assessmentId: assessment.id },
     include: { ngo: true },
@@ -311,18 +302,39 @@ router.post('/auto-retry', requireRole(...MANAGE_ROLES), async (req: Authenticat
       results.push({ ngoId: m.ngoId, ngoName: m.ngo.name, status: 'skipped-duplicate' });
       continue;
     }
-    if (!m.ngo.contactEmail || !/^\S+@\S+\.\S+$/.test(m.ngo.contactEmail.trim())) {
-      results.push({ ngoId: m.ngoId, ngoName: m.ngo.name, status: 'skipped-no-email' });
+    const email = (m.ngo.contactEmail ?? '').trim();
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+      results.push({ ngoId: m.ngoId, ngoName: m.ngo.name, status: 'email-unavailable' });
+      continue;
+    }
+    if (!m.ngo.emailVerified) {
+      results.push({ ngoId: m.ngoId, ngoName: m.ngo.name, status: 'skipped-unverified' });
       continue;
     }
     const { subject, text } = buildSurplusEmail({
       hotelName: org.name, location, contactPhone: org.contactPhone,
-      ngoName: m.ngo.name, surplusKg: assessment.quantityKg, dateLabel,
+      ngoName: m.ngo.name, surplusKg: assessment.quantityKg,
     });
-    const attempt = await sendMail({ to: m.ngo.contactEmail.trim(), subject, text });
+    const attempt = await sendMail({ to: email, subject, text });
     await prisma.ngoMatch.update({
       where: { id: m.id },
       data: { deliveryJson: JSON.stringify({ attempts: [...attempts, attempt] }) },
+    });
+    await prisma.ngoEmailDelivery.upsert({
+      where: { assessmentId_ngoId_recipientEmail: { assessmentId: assessment.id, ngoId: m.ngoId, recipientEmail: email } },
+      update: {
+        status: attempt.ok ? 'sent' : 'failed',
+        providerMessageId: attempt.messageId ?? null,
+        failureReason: attempt.ok ? null : (attempt.error ?? 'Delivery failed.'),
+        sentAt: attempt.ok ? new Date(attempt.at) : null,
+      },
+      create: {
+        organizationId: orgId, assessmentId: assessment.id, ngoId: m.ngoId, recipientEmail: email,
+        status: attempt.ok ? 'sent' : 'failed',
+        providerMessageId: attempt.messageId ?? null,
+        failureReason: attempt.ok ? null : (attempt.error ?? 'Delivery failed.'),
+        sentAt: attempt.ok ? new Date(attempt.at) : null,
+      },
     });
     await prisma.notification.create({
       data: {

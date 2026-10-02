@@ -1,4 +1,5 @@
 // E2E: eligible surplus -> match -> notify -> accept -> schedule -> handover -> receipt.
+// Uses an API-created NGO (no seed organizations exist anymore).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { req, auth, login, onboardAs } from '../helpers.mjs';
@@ -22,23 +23,34 @@ describe('journey: NGO acceptance and pickup', () => {
     assert.equal(as.data.assessment.verdict, 'ELIGIBLE');
     const assessId = as.data.assessment.id;
 
-    const ngos = await req('/ngos', { headers: h });
-    const seedNgo = (ngos.data.ngos || []).find((n) => n.name === 'City Food Helpers');
-    assert.ok(seedNgo, 'seed NGO present');
+    // Create a real registry entry through the admin API (super-admin only).
+    const superToken = await login('superadmin@mealguard.local', 'SuperAdmin123!');
+    const sh = auth(superToken);
+    const ngoName = `E2E Partner ${stamp}`;
+    const nc = await req('/ngos', { method: 'POST', headers: sh,
+      body: JSON.stringify({ name: ngoName, city: 'Pune', address: '9 Test Road, Pune',
+        acceptedCategories: ['Cooked Veg'], pickupCapable: true, operatingHours: '08:00-20:00' }) });
+    assert.equal(nc.status, 201, JSON.stringify(nc.data).slice(0, 200));
+    const ngoId = nc.data.ngo.id;
+
     const mt = await req(`/redistribution/matches?assessmentId=${assessId}`, { headers: h });
     assert.equal(mt.status, 200);
-    const seedMatch = (mt.data.matches || []).find((m) => m.ngo.id === seedNgo.id);
-    assert.ok(seedMatch && seedMatch.score > 0, JSON.stringify(mt.data.matches).slice(0, 200));
+    const created = (mt.data.matches || []).find((m) => m.ngo.id === ngoId);
+    assert.ok(created && created.score > 0, JSON.stringify(mt.data.matches).slice(0, 200));
 
     const nt = await req('/redistribution/notify', { method: 'POST', headers: h,
-      body: JSON.stringify({ assessmentId: assessId, ngoIds: [seedNgo.id] }) });
+      body: JSON.stringify({ assessmentId: assessId, ngoIds: [ngoId] }) });
     assert.equal(nt.status, 200, JSON.stringify(nt.data).slice(0, 200));
     assert.equal(nt.data.results[0].channel, 'simulated');
     const recordId = nt.data.recordIds[0];
     assert.ok(recordId);
 
-    const ngo = await login('ngo@mealguard.local', 'Ngo123456!');
-    const nh = auth(ngo);
+    // Link a dedicated NGO login to the new organization, then accept as that NGO.
+    const ngoUser = await onboardAs('e2e-ngouser', 'NGO', { skipOnboarding: true });
+    const link = await req(`/ngos/${ngoId}/link`, { method: 'POST', headers: sh,
+      body: JSON.stringify({ email: ngoUser.email }) });
+    assert.equal(link.status, 200, JSON.stringify(link.data).slice(0, 200));
+    const nh = auth(ngoUser.token);
     const pickupAt = new Date(now + 2 * 3600000).toISOString();
     const ac = await req(`/redistribution/${recordId}/accept`, { method: 'POST', headers: nh,
       body: JSON.stringify({ intendedPickupAt: pickupAt }) });

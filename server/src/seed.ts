@@ -82,57 +82,11 @@ async function main() {
     }
   }
 
-  // Seed NGO registry for redistribution (idempotent upserts).
-  const seedNgos = [
-    {
-      name: 'City Food Helpers',
-      address: '5 Service Lane',
-      city: 'Pune',
-      contactName: 'Meera Patil',
-      contactEmail: 'ngo@mealguard.local',
-      contactPhone: '+91-9000000001',
-      acceptedCategories: JSON.stringify(['Cooked Veg', 'Grains', 'Bread']),
-      pickupCapable: true,
-      operatingHours: '08:00-20:00',
-      capacityKg: 100,
-      isActive: true,
-    },
-    {
-      name: 'Suburban Meal Collective',
-      address: '14 Market Road',
-      city: 'Pune',
-      contactName: 'Ravi Shinde',
-      contactEmail: 'suburban-meals@test.local',
-      contactPhone: '+91-9000000002',
-      acceptedCategories: JSON.stringify(['Cooked Veg']),
-      pickupCapable: false,
-      operatingHours: '09:00-18:00',
-      capacityKg: 20,
-      isActive: true,
-    },
-    {
-      name: 'Distant Hills Kitchen',
-      address: '1 Hill Top',
-      city: 'Mahabaleshwar',
-      contactName: 'Asha Jadhav',
-      contactEmail: 'hills@test.local',
-      contactPhone: '+91-9000000003',
-      acceptedCategories: JSON.stringify(['Dairy']),
-      pickupCapable: true,
-      operatingHours: '10:00-16:00',
-      capacityKg: 30,
-      isActive: false,
-    },
-  ];
-  for (const n of seedNgos) {
-    const { name, ...rest } = n;
-    await prisma.ngoOrganization.upsert({ where: { name }, update: { ...rest }, create: n });
-  }
-  // Link the seed NGO login to its organization (NGO users see only their own org).
-  await prisma.user.update({
-    where: { email: 'ngo@mealguard.local' },
-    data: { ngoOrganization: { connect: { name: 'City Food Helpers' } } },
-  }).catch(() => undefined);
+  // NGO registry intentionally starts EMPTY. Real organizations enter only via
+  // Google Places discovery, administrator verification, or explicit admin
+  // entry. No demo/seed NGOs are ever created (production users must never
+  // see fabricated organizations). The seed NGO login keeps working but stays
+  // unlinked until a super-admin links it to a real organization.
 
   if (org) {
     await seedPrompt2History(org.id);
@@ -351,7 +305,6 @@ async function seedPrompt10Demo(orgId: string) {
   if (!kitchen) return;
 
   const admin = await prisma.user.findUnique({ where: { email: 'admin@mealguard.local' } });
-  const cityNgo = await prisma.ngoOrganization.findUnique({ where: { name: 'City Food Helpers' } });
 
   const rice = await prisma.foodItem.findUnique({ where: { organizationId_name: { organizationId: orgId, name: 'Rice' } } });
   const dal = await prisma.foodItem.findUnique({ where: { organizationId_name: { organizationId: orgId, name: 'Dal' } } });
@@ -411,111 +364,12 @@ async function seedPrompt10Demo(orgId: string) {
     console.log('Seeded unread SURPLUS_RISK_HIGH notification for live Food Flow.');
   }
 
-  // 3. Operational eligibility assessment + match
-  const assessCount = await prisma.surplusEligibilityAssessment.count({
-    where: { organizationId: orgId },
-  });
-  let activeAssessmentId: string | null = null;
-  if (assessCount === 0 && admin && cityNgo) {
-    const assess = await prisma.surplusEligibilityAssessment.create({
-      data: {
-        organizationId: orgId,
-        kitchenUnitId: kitchen.id,
-        foodDescription: 'Cooked Steamed Rice (Lunch service surplus)',
-        quantityKg: 15.0,
-        recordedInfoJson: JSON.stringify({
-          category: 'Grains',
-          preparedDate: todayUtc.toISOString().slice(0, 10),
-          storageArea: 'Hot holding > 65°C',
-          availableUntil: new Date(Date.now() + 4 * 3600000).toISOString(),
-          qualityNote: 'Food kept in food-grade insulated warmers; visual & temperature checks pass.',
-        }),
-        humanConfirmed: true,
-        eligible: true,
-        reason: 'Meets operational criteria; human sensory and temperature confirmation on file.',
-        assessedById: admin.id,
-      },
-    });
-    activeAssessmentId = assess.id;
+  // 3. NGO-linked demo content removed (see note at end of this function).
 
-    await prisma.ngoMatch.create({
-      data: {
-        assessmentId: assess.id,
-        ngoId: cityNgo.id,
-        status: 'SELECTED',
-        score: 95,
-        reasonsJson: JSON.stringify([
-          'Active certified local partner in Pune (+30)',
-          'Capable of direct vehicle pickup (+25)',
-          'Accepts Grains and Cooked Veg categories (+25)',
-          'Operating hours align with immediate pickup (+15)',
-        ]),
-        notes: 'Highest scoring local redistribution partner.',
-      },
-    });
-    // eslint-disable-next-line no-console
-    console.log('Seeded confirmed ELIGIBLE surplus assessment matched to City Food Helpers.');
-  }
-
-  // 4. Completed redistribution record + Measurable impact
-  const redistCount = await prisma.redistributionRecord.count({
-    where: { organizationId: orgId, status: 'COMPLETED' },
-  });
-  if (redistCount === 0 && cityNgo) {
-    const yesterday = new Date(Date.now() - 86400000);
-    const completedRecord = await prisma.redistributionRecord.create({
-      data: {
-        organizationId: orgId,
-        kitchenUnitId: kitchen.id,
-        ngoId: cityNgo.id,
-        assessmentId: activeAssessmentId,
-        quantityKg: 20.0,
-        status: 'COMPLETED',
-        pickupAt: yesterday,
-        deliveredAt: yesterday,
-        notes: 'Redistribution complete: 20 kg Vegetable Curry picked up and delivered to City Food Helpers community dining hall.',
-      },
-    });
-
-    await prisma.impactSnapshot.create({
-      data: {
-        organizationId: orgId,
-        date: yesterday,
-        foodSavedKg: 20.0,
-        wasteReducedKg: 20.0,
-        co2AvoidedKgEstimate: 50.0,
-        costSavedEstimate: 2400.0,
-        notes: 'Estimated impact from verified 20 kg meal rescue via City Food Helpers.',
-      },
-    });
-
-    if (admin) {
-      await prisma.auditLog.createMany({
-        data: [
-          {
-            organizationId: orgId,
-            userId: admin.id,
-            action: 'redistribution.notify',
-            entityType: 'RedistributionRecord',
-            entityId: completedRecord.id,
-            metadataJson: JSON.stringify({ ngoName: 'City Food Helpers', quantityKg: 20 }),
-            createdAt: yesterday,
-          },
-          {
-            organizationId: orgId,
-            userId: admin.id,
-            action: 'redistribution.handover',
-            entityType: 'RedistributionRecord',
-            entityId: completedRecord.id,
-            metadataJson: JSON.stringify({ from: 'SCHEDULED', to: 'COMPLETED', verifiedWeightKg: 20 }),
-            createdAt: yesterday,
-          },
-        ],
-      });
-    }
-    // eslint-disable-next-line no-console
-    console.log('Seeded completed redistribution record and verified impact snapshot.');
-  }
+  // 4. NGO-linked demo content removed: assessments, matches, redistribution
+  // records and impact snapshots referencing fabricated organizations are
+  // never seeded. Real activity appears once genuine NGOs are discovered
+  // and the kitchen records actual data.
 }
 
 main()

@@ -22,17 +22,19 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // Full signup -> verify -> login -> onboard journey. Returns { token, orgId, kitchenId }.
-export async function onboardAs(prefix, role = 'INSTITUTION_ADMIN') {
+// Pass { skipOnboarding: true } for roles that join later (e.g. NGO logins).
+export async function onboardAs(prefix, role = 'INSTITUTION_ADMIN', opts = {}) {
   const stamp = Date.now();
-  const email = `${prefix}.${stamp}@test.local`;
+  const email = `${prefix}.${stamp}@e2e.mealguard.local`;
   const pass = 'TestPass123!';
   let r = await req('/auth/signup', { method: 'POST', body: JSON.stringify({ name: `Test ${prefix}`, email, password: pass, role }) });
   if (r.status !== 201) throw new Error(`signup failed: ${JSON.stringify(r.data)}`);
   const token = await login(email, pass);
+  if (opts.skipOnboarding) return { token, orgId: null, kitchenId: null, email };
   const orgName = `Test Org ${prefix} ${stamp}`;
   r = await req('/organizations/onboarding', { method: 'POST', headers: auth(token), body: JSON.stringify({
     sector: 'PRIVATE', institutionType: 'HOSTEL_MESS', name: orgName, address: '9 Test Road', city: 'Pune',
-    contactName: 'Test Owner', contactPhone: '+91-9000000000', contactEmail: email, operatingHours: '8am-8pm',
+    contactName: 'Test Owner', contactPhone: '+91-9876543210', contactEmail: email, operatingHours: '8am-8pm',
     peopleServedDaily: 200, kitchenCapacityKg: 100,
     kitchens: [{ name: 'Main Test Kitchen', mealTimings: 'Lunch 12-2pm', storageAreas: 'Dry store', foodCategories: 'Grains', productionCapacityKg: 100 }],
   }) });

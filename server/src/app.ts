@@ -23,6 +23,7 @@ import impactRoutes from './routes/impact';
 import analyticsRoutes from './routes/analytics';
 import reportsRoutes from './routes/reports';
 import mlRoutes from './routes/ml';
+import discoveryRoutes from './routes/discovery';
 
 dotenv.config();
 
@@ -102,6 +103,7 @@ export function createApp() {
   app.use('/api/analytics', analyticsRoutes);
   app.use('/api/reports', reportsRoutes);
   app.use('/api/ml', mlRoutes);
+  app.use('/api/discovery', discoveryRoutes);
 
   // 404 for unknown API routes — prevents silent dead ends
   app.use('/api', (_req, res) => {
