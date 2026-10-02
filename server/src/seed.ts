@@ -83,7 +83,7 @@ async function main() {
   }
 
   // NGO registry intentionally starts EMPTY. Real organizations enter only via
-  // Google Places discovery, administrator verification, or explicit admin
+  // map discovery, administrator verification, or explicit admin
   // entry. No demo/seed NGOs are ever created (production users must never
   // see fabricated organizations). The seed NGO login keeps working but stays
   // unlinked until a super-admin links it to a real organization.

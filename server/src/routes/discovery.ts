@@ -2,10 +2,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, requireRole, audit, type AuthenticatedRequest } from '../auth';
-import { googleConfigured, searchTextPlaces, fetchPlaceDetails, geocodeAddressVerbose } from '../lib/google-places';
+import { geocodeHotelAddress, searchOverpassCharities } from '../lib/open-geo';
 import {
   haversineKm, keywordRelevance, inferAcceptance, isCandidate, rankScore,
-  dedupeByPlaceId, fetchWebsiteContacts, classifyRelevance,
+  fetchWebsiteContacts, classifyRelevance,
   type Relevance,
 } from '../lib/ngo-discovery';
 
@@ -15,12 +15,7 @@ router.use(requireAuth);
 const MANAGE_ROLES = ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'] as const;
 const READ_ROLES = ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER', 'STAFF'] as const;
 
-const SEARCH_QUERIES = [
-  'food bank', 'food donation', 'food rescue', 'food distribution', 'food charity',
-  'community food service', 'charity', 'NGO', 'non-profit organization',
-  'shelter', 'homeless shelter', 'community kitchen',
-];
-const DETAILS_CAP = 20;
+const SAVE_CAP = 50;
 const MAX_RADIUS_KM = 50;
 
 function zodError(res: import('express').Response, err: z.ZodError) {
@@ -37,20 +32,16 @@ async function orgIdFor(req: AuthenticatedRequest, res: import('express').Respon
   return me.organizationId;
 }
 
-/** Hotel coordinates: stored first, geocoded from the real address only when missing. */
+/** Hotel coordinates: stored first, resolved via keyless Nominatim only when missing. */
 async function hotelCoords(orgId: string): Promise<{ lat: number; lng: number; geocoded: boolean; error?: string }> {
   const org = await prisma.organization.findUnique({ where: { id: orgId } });
   if (!org) return { lat: 0, lng: 0, geocoded: false, error: 'Organization not found.' };
   if (typeof org.latitude === 'number' && typeof org.longitude === 'number') {
     return { lat: org.latitude, lng: org.longitude, geocoded: false };
   }
-  const address = [org.address, org.city, org.state, org.country].filter(Boolean).join(', ');
-  const g = await geocodeAddressVerbose(address);
-  if (!g.ok) {
-    const hint = g.failure.code === 'zero-results'
-      ? `Could not geocode the hotel address ("${address}"). Update the address or enter coordinates manually.`
-      : `Could not geocode the hotel address: ${g.failure.message}`;
-    return { lat: 0, lng: 0, geocoded: false, error: hint };
+  const g = await geocodeHotelAddress({ address: org.address, city: org.city, state: org.state, country: org.country });
+  if (!g) {
+    return { lat: 0, lng: 0, geocoded: false, error: `Could not locate the hotel address ("${[org.address, org.city, org.state, org.country].filter(Boolean).join(', ')}"). Update the address or enter coordinates manually in Organization settings.` };
   }
   await prisma.organization.update({ where: { id: orgId }, data: { latitude: g.lat, longitude: g.lng } });
   return { lat: g.lat, lng: g.lng, geocoded: true };
@@ -66,162 +57,162 @@ interface DiscoveredRow {
   rank: number;
 }
 
-// POST /api/discovery/search — live Google Places discovery around the hotel.
+// POST /api/discovery/search — live OpenStreetMap charity discovery around the hotel.
+// Keyless: Nominatim + Overpass. Every field stored comes from mapped data,
+// official websites, or admin verification — nothing invented.
 router.post('/search', requireRole(...MANAGE_ROLES), async (req: AuthenticatedRequest, res) => {
   const schema = z.object({ radiusKm: z.coerce.number().min(1).max(MAX_RADIUS_KM).optional().default(10) });
   const parsed = schema.safeParse(req.body ?? {});
   if (!parsed.success) return zodError(res, parsed.error);
   const orgId = await orgIdFor(req, res);
   if (!orgId) return;
-  if (!googleConfigured()) {
-    return res.status(503).json({ error: 'Unable to retrieve nearby organizations right now: Google Places is not configured.' });
-  }
   const coords = await hotelCoords(orgId);
   if (coords.error) return res.status(400).json({ error: coords.error });
 
   const radii = [parsed.data.radiusKm, parsed.data.radiusKm * 2, parsed.data.radiusKm * 4]
     .filter((r, i, a) => r <= MAX_RADIUS_KM && a.indexOf(r) === i);
   let searched = 0;
-  let collected: Awaited<ReturnType<typeof searchTextPlaces>>['places'] = [];
   let radiusUsedKm = radii[0];
-  let queryErrors: string[] = [];
-  const raw: Awaited<ReturnType<typeof searchTextPlaces>>['places'] = [];
+  let collected = dedupePlaces([] as Awaited<ReturnType<typeof searchOverpassCharities>>['places']);
+  let lastError: string | null = null;
   for (const rKm of radii) {
-    for (const q of SEARCH_QUERIES) {
-      const out = await searchTextPlaces({ query: q, lat: coords.lat, lng: coords.lng, radiusM: Math.round(rKm * 1000) });
-      searched++;
-      if (out.error) {
-        queryErrors.push(`${q}: ${out.error.message}`);
-        if (out.error.code === 'quota' || out.error.code === 'forbidden') {
-          return res.status(502).json({ error: out.error.message, searched });
-        }
-        continue;
-      }
-      raw.push(...out.places);
+    const out = await searchOverpassCharities({ lat: coords.lat, lng: coords.lng, radiusM: Math.round(rKm * 1000) });
+    searched++;
+    if (out.error) {
+      lastError = out.error.message;
+      continue;
     }
-    collected = dedupeByPlaceId(raw);
+    lastError = null;
+    collected = dedupePlaces([...collected, ...out.places]);
     radiusUsedKm = rKm;
-    const promising = collected.filter((p) => {
-      if (!isCandidate({ businessStatus: p.businessStatus, acceptance: 'unknown' })) return false;
-      return keywordRelevance(p.name ?? '', p.types).level !== 'unknown';
-    });
-    if (promising.length >= 5) break;
+    const promising = collected.filter((p) => keywordRelevance(p.name, p.types).level !== 'unknown');
+    if (promising.length >= 5 || collected.length >= 20) break;
   }
-  const unique = dedupeByPlaceId(raw);
-  // Rank keyword priority so Details quota goes to the most promising places.
-  const prioritized = unique
-    .map((p) => ({ p, rel: keywordRelevance(p.name ?? '', p.types) }))
+  if (collected.length === 0) {
+    return res.status(502).json({
+      error: lastError ?? 'No verified food-distribution organizations were found near this location.',
+      searched, radiusUsedKm,
+    });
+  }
+  // Keyword priority first so website checks go to the most promising places.
+  const prioritized = collected
+    .map((p) => ({ p, rel: keywordRelevance(p.name, p.types) }))
     .sort((a, b) => {
       const order = { high: 0, likely: 1, unknown: 2 } as const;
       return order[a.rel.level] - order[b.rel.level];
     })
-    .slice(0, DETAILS_CAP);
+    .slice(0, SAVE_CAP);
 
-  let detailsFetched = 0;
   let saved = 0;
   const rows: DiscoveredRow[] = [];
+  const notes: string[] = [];
   for (const { p, rel } of prioritized) {
-    const details = await fetchPlaceDetails(p.placeId);
-    if (details.error) {
-      queryErrors.push(`${p.name ?? p.placeId}: ${details.error.message}`);
-      continue;
-    }
-    detailsFetched++;
-    const distanceKm = details.lat !== null && details.lng !== null
-      ? haversineKm(coords.lat, coords.lng, details.lat, details.lng)
+    const distanceKm = p.lat !== null && p.lng !== null
+      ? haversineKm(coords.lat, coords.lng, p.lat, p.lng)
       : null;
     let relevance = rel.level;
     let relevanceReason = rel.reason;
     if (relevance === 'unknown') {
-      const cls = await classifyRelevance({
-        name: details.name ?? '', address: details.address, types: details.types, website: details.website,
-      });
+      const cls = await classifyRelevance({ name: p.name, address: p.address, types: p.types, website: p.website });
       if (cls.relevance !== 'unknown') {
         relevance = cls.relevance;
-        relevanceReason = `Gemini classification: ${cls.reason}`;
+        relevanceReason = `Classification: ${cls.reason}`;
       }
     }
-    const acceptance = inferAcceptance(details.types);
-    if (!isCandidate({ businessStatus: details.businessStatus, acceptance })) continue;
+    const acceptance = inferAcceptance(p.types);
+    if (!isCandidate({ businessStatus: null, acceptance })) continue;
 
-    let email: string | null = null;
+    // Email: mapped OSM contact first, else official website, else none.
+    let email = p.email;
+    let emailSource = p.email ? 'openstreetmap' : null;
     let websiteReachable = false;
     let websiteFoodEvidence = false;
-    if (details.website) {
-      const wc = await fetchWebsiteContacts(details.website);
+    if (!email && p.website) {
+      const wc = await fetchWebsiteContacts(p.website);
       websiteReachable = wc.reachable;
       websiteFoodEvidence = wc.hasFoodEvidence;
-      if (wc.emails.length > 0) email = wc.emails[0];
+      if (wc.emails.length > 0) {
+        email = wc.emails[0];
+        emailSource = 'website';
+      }
+    } else if (p.website) {
+      const wc = await fetchWebsiteContacts(p.website);
+      websiteReachable = wc.reachable;
+      websiteFoodEvidence = wc.hasFoodEvidence;
     }
     const verificationStatus = websiteReachable && (email !== null || websiteFoodEvidence)
       ? 'website_verified'
       : relevance === 'unknown'
         ? 'verification_pending'
         : 'unverified';
+    const externalId = `osm:${p.osmId}`;
+    const mapsUri = p.lat !== null && p.lng !== null
+      ? `https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lng}#map=16/${p.lat}/${p.lng}`
+      : null;
 
-    const existing = await prisma.ngoOrganization.findUnique({ where: { googlePlaceId: p.placeId } });
+    const existing = await prisma.ngoOrganization.findUnique({ where: { externalPlaceId: externalId } });
     const keepAdmin = existing && (existing.verificationStatus === 'admin_verified' || existing.verificationStatus === 'darpan_verified');
     const keepAcceptance = existing && (existing.foodAcceptanceStatus === 'confirmed' || existing.foodAcceptanceStatus === 'does_not_accept');
     const keepEmail = existing && existing.emailVerified && existing.contactEmail;
     const data = {
-      name: details.name ?? p.name ?? 'Unnamed organization',
-      address: details.address,
+      name: p.name,
+      address: p.address,
       city: null as string | null,
-      latitude: details.lat,
-      longitude: details.lng,
-      contactPhone: details.phone,
-      website: details.website,
+      latitude: p.lat,
+      longitude: p.lng,
+      contactPhone: p.phone,
+      website: p.website,
       contactEmail: keepEmail ? existing.contactEmail : email,
-      emailSource: keepEmail ? existing.emailSource : email ? 'website' : null,
+      emailSource: keepEmail ? existing.emailSource : email ? emailSource : null,
       emailVerified: keepEmail ? true : false,
       emailLastChecked: email || keepEmail ? new Date() : null,
-      googleMapsUri: details.mapsUri,
-      googleBusinessStatus: details.businessStatus,
-      googleTypes: JSON.stringify(details.types),
+      mapsUri,
+      operationalStatus: 'OPERATIONAL',
+      placeTypes: JSON.stringify(p.types),
       verificationStatus: keepAdmin ? existing.verificationStatus : verificationStatus,
       verificationSource: keepAdmin ? existing.verificationSource : verificationStatus === 'website_verified' ? 'official_website' : null,
       foodAcceptanceStatus: keepAcceptance ? existing.foodAcceptanceStatus : acceptance,
       acceptsCookedFood: keepAcceptance ? existing.acceptsCookedFood : null,
       acceptsPreparedFood: keepAcceptance ? existing.acceptsPreparedFood : null,
       acceptsPackagedFood: keepAcceptance ? existing.acceptsPackagedFood : null,
-      acceptedCategories: JSON.stringify(details.types.slice(0, 10)),
+      acceptedCategories: JSON.stringify(p.types.slice(0, 10)),
       distanceKm,
       relevance,
       relevanceReason: websiteFoodEvidence && !relevanceReason.includes('website')
         ? `${relevanceReason} Official website mentions food-donation work.`
         : relevanceReason,
-      source: 'google_places',
+      source: 'openstreetmap',
       lastCheckedAt: new Date(),
-      isActive: details.businessStatus ? details.businessStatus !== 'CLOSED_PERMANENTLY' : true,
+      isActive: true,
     };
     try {
       if (existing) {
-        await prisma.ngoOrganization.update({ where: { googlePlaceId: p.placeId }, data });
+        await prisma.ngoOrganization.update({ where: { externalPlaceId: externalId }, data });
       } else {
         try {
-          await prisma.ngoOrganization.create({ data: { ...data, googlePlaceId: p.placeId } });
+          await prisma.ngoOrganization.create({ data: { ...data, externalPlaceId: externalId } });
         } catch (e) {
           // Name collision with a manually added row: merge into it.
           if (e instanceof Error && e.message.includes('Unique constraint')) {
             const byName = await prisma.ngoOrganization.findUnique({ where: { name: data.name } });
-            if (byName) await prisma.ngoOrganization.update({ where: { id: byName.id }, data: { ...data, googlePlaceId: p.placeId } });
+            if (byName) await prisma.ngoOrganization.update({ where: { id: byName.id }, data: { ...data, externalPlaceId: externalId } });
             else throw e;
           } else throw e;
         }
       }
       saved++;
     } catch (e) {
-      queryErrors.push(`${data.name}: ${e instanceof Error ? e.message : 'save failed'}`);
+      notes.push(`${data.name}: ${e instanceof Error ? e.message : 'save failed'}`);
       continue;
     }
     const rank = rankScore({
       distanceKm, maxRadiusKm: radiusUsedKm, relevance,
       verificationStatus: keepAdmin ? (existing?.verificationStatus ?? verificationStatus) : verificationStatus,
       acceptance: keepAcceptance ? (existing?.foodAcceptanceStatus as 'confirmed' | 'does_not_accept') : acceptance,
-      businessStatus: details.businessStatus,
+      businessStatus: 'OPERATIONAL',
     });
     rows.push({
-      placeId: p.placeId, name: data.name, distanceKm, relevance,
+      placeId: externalId, name: data.name, distanceKm, relevance,
       verificationStatus: (keepAdmin ? existing?.verificationStatus : verificationStatus) ?? verificationStatus,
       acceptance: (keepAcceptance ? existing?.foodAcceptanceStatus : acceptance) ?? acceptance,
       rank: rank.total,
@@ -230,29 +221,30 @@ router.post('/search', requireRole(...MANAGE_ROLES), async (req: AuthenticatedRe
   rows.sort((a, b) => b.rank - a.rank);
   await audit('discovery.search', {
     userId: req.userId, organizationId: orgId, entityType: 'NgoOrganization', entityId: orgId,
-    metadata: { radiusUsedKm, searched, detailsFetched, saved, geocoded: coords.geocoded },
+    metadata: { provider: 'openstreetmap', radiusUsedKm, searched, saved, geocoded: coords.geocoded },
   });
   return res.json({
     message: rows.length > 0 ? `Found ${rows.length} organizations.` : 'No verified food-distribution organizations were found near this location.',
-    searched, radiusUsedKm, detailsFetched, saved,
+    searched, radiusUsedKm, saved,
     geocodedHotel: coords.geocoded,
-    errors: queryErrors.slice(0, 10),
+    errors: notes.slice(0, 10),
     places: rows,
   });
 });
 
-// GET /api/discovery/status — backend-verified automation health for the dashboard.
+// GET /api/discovery/status — backend-verified discovery health for the dashboard.
 router.get('/status', requireRole(...READ_ROLES), async (req: AuthenticatedRequest, res) => {
   const orgId = await orgIdFor(req, res);
   if (!orgId) return;
   const org = await prisma.organization.findUnique({ where: { id: orgId } });
   const last = await prisma.ngoOrganization.findFirst({
-    where: { source: 'google_places' },
+    where: { source: 'openstreetmap' },
     orderBy: { lastCheckedAt: 'desc' },
   });
-  const count = await prisma.ngoOrganization.count({ where: { source: 'google_places' } });
+  const count = await prisma.ngoOrganization.count({ where: { source: 'openstreetmap' } });
   return res.json({
-    googleConfigured: googleConfigured(),
+    provider: 'openstreetmap',
+    keyRequired: false,
     hotelCoordsPresent: typeof org?.latitude === 'number' && typeof org?.longitude === 'number',
     hotelCoords: org && typeof org.latitude === 'number' && typeof org.longitude === 'number'
       ? { lat: org.latitude, lng: org.longitude }
@@ -261,5 +253,13 @@ router.get('/status', requireRole(...READ_ROLES), async (req: AuthenticatedReque
     discoveredCount: count,
   });
 });
+
+function dedupePlaces<T extends { osmId: string }>(places: T[]): T[] {
+  const seen = new Map<string, T>();
+  for (const p of places) {
+    if (!seen.has(p.osmId)) seen.set(p.osmId, p);
+  }
+  return [...seen.values()];
+}
 
 export default router;

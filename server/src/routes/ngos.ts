@@ -18,8 +18,8 @@ function shapeNgo(n: {
   contactName: string | null; contactEmail: string | null; contactPhone: string | null;
   acceptedCategories: string | null; pickupCapable: boolean; operatingHours: string | null;
   capacityKg: number | null; isActive: boolean;
-  website: string | null; googlePlaceId: string | null; googleMapsUri: string | null;
-  googleBusinessStatus: string | null; source: string; lastCheckedAt: Date | null;
+  website: string | null; externalPlaceId: string | null; mapsUri: string | null;
+  operationalStatus: string | null; source: string; lastCheckedAt: Date | null;
   verificationStatus: string; verificationSource: string | null; ngoDarpanId: string | null;
   emailSource: string | null; emailVerified: boolean; emailLastChecked: Date | null;
   foodAcceptanceStatus: string; acceptsCookedFood: boolean | null;

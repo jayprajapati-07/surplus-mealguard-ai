@@ -346,10 +346,10 @@ model NgoOrganization {
   capacityKg         Float?
   isActive           Boolean                @default(true)
   // Real-discovery identity + provenance (never invented)
-  googlePlaceId      String?                @unique
-  googleMapsUri      String?
-  googleBusinessStatus String?
-  googleTypes        String?
+  externalPlaceId      String?                @unique
+  mapsUri              String?
+  operationalStatus    String?
+  placeTypes           String?
   source             String                 @default("registry")
   lastCheckedAt      DateTime?
   // Verification (google listing alone is NOT verification)

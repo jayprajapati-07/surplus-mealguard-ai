@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, requireRole, audit, type AuthenticatedRequest } from '../auth';
-import { geocodeAddress } from '../lib/google-places';
+import { geocodeHotelAddress } from '../lib/open-geo';
 
 const router = Router();
 
@@ -160,16 +160,16 @@ router.post('/kitchens', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHE
   }
 });
 
-// POST /api/organizations/geocode — resolve the real address to coordinates via Google Geocoding.
+// POST /api/organizations/geocode — resolve the real address to coordinates (keyless Nominatim).
 router.post('/geocode', requireRole('SUPER_ADMIN', 'INSTITUTION_ADMIN', 'KITCHEN_MANAGER'), async (req: AuthenticatedRequest, res) => {
   const me = await prisma.user.findUnique({ where: { id: req.userId! } });
   if (!me?.organizationId) return res.status(404).json({ error: 'Complete onboarding before geocoding.' });
   const org = await prisma.organization.findUnique({ where: { id: me.organizationId } });
   if (!org) return res.status(404).json({ error: 'Organization not found.' });
   const address = [org.address, org.city, org.state, org.country].filter(Boolean).join(', ');
-  const g = await geocodeAddress(address);
+  const g = await geocodeHotelAddress({ address: org.address, city: org.city, state: org.state, country: org.country });
   if (!g) {
-    return res.status(502).json({ error: `Could not geocode "${address}". Check the address or enter coordinates manually.` });
+    return res.status(502).json({ error: `Could not locate "${address}". Check the address or enter coordinates manually.` });
   }
   const updated = await prisma.organization.update({
     where: { id: org.id },

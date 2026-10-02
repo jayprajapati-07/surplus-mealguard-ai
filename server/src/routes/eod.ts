@@ -9,7 +9,6 @@ import { summarizeDayReport } from '../lib/gemini-explain';
 import { triggerAutoDistribution, type AutoDistributionResult } from '../lib/food-distribution';
 import { scoreNgoMatch } from '../lib/matching';
 import { smtpConfigured, resendConfigured } from '../lib/mailer';
-import { googleConfigured } from '../lib/google-places';
 import { getSchedulerState } from '../lib/scheduler-state';
 
 const router = Router();
@@ -636,8 +635,8 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
       matchScore: stored?.score ?? scored?.score ?? null,
       emailStatus: email.status, lastContact: email.at,
       verificationStatus: n.verificationStatus, verificationSource: n.verificationSource,
-      googlePlaceId: n.googlePlaceId, googleMapsUri: n.googleMapsUri,
-      googleBusinessStatus: n.googleBusinessStatus, source: n.source,
+      externalPlaceId: n.externalPlaceId, mapsUri: n.mapsUri,
+      operationalStatus: n.operationalStatus, source: n.source,
       lastCheckedAt: n.lastCheckedAt, website: n.website,
       emailVerified: n.emailVerified, emailSource: n.emailSource,
       foodAcceptanceStatus: n.foodAcceptanceStatus,
@@ -679,10 +678,10 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
       ? 'attention'
       : 'healthy';
   const lastDiscovery = await prisma.ngoOrganization.findFirst({
-    where: { source: 'google_places' },
+    where: { source: 'openstreetmap' },
     orderBy: { lastCheckedAt: 'desc' },
   });
-  const discoveredCount = await prisma.ngoOrganization.count({ where: { source: 'google_places' } });
+  const discoveredCount = await prisma.ngoOrganization.count({ where: { source: 'openstreetmap' } });
   const automation = {
     state: automationState,
     schedulerArmed: sched.armed,
@@ -697,7 +696,8 @@ router.get('/distribution-overview', requireRole(...READ_ROLES), async (req: Aut
       lastEmail: lastEmailNote ? { at: lastEmailNote.createdAt, type: lastEmailNote.type } : null,
     },
     ngoDiscovery: {
-      googleConfigured: googleConfigured(),
+      provider: 'openstreetmap',
+      keyRequired: false,
       hotelCoordsPresent: typeof org.latitude === 'number' && typeof org.longitude === 'number',
       lastSearchAt: lastDiscovery?.lastCheckedAt ?? null,
       discoveredCount,

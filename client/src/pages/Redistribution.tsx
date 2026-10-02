@@ -69,7 +69,7 @@ interface OverviewNgo {
   sameCity: boolean; acceptance: string;
   matchScore: number | null; emailStatus: string; lastContact: string | null;
   verificationStatus: string; verificationSource: string | null;
-  googleMapsUri: string | null; googleBusinessStatus: string | null; source: string;
+  mapsUri: string | null; operationalStatus: string | null; source: string;
   lastCheckedAt: string | null; website: string | null;
   emailVerified: boolean; distanceKm: number | null; relevance: string | null;
 }
@@ -87,7 +87,7 @@ interface OverviewAutomation {
   lastSuccess: { at: string } | null;
   lastFailure: { at: string; reason: string | null } | null;
   emailService: { configured: boolean; provider?: string | null; lastEmail: { at: string; type: string } | null };
-  ngoDiscovery: { googleConfigured: boolean; hotelCoordsPresent: boolean; lastSearchAt: string | null; discoveredCount: number };
+  ngoDiscovery: { provider: string; keyRequired: boolean; hotelCoordsPresent: boolean; lastSearchAt: string | null; discoveredCount: number };
 }
 interface Overview {
   date: string; kitchen: { id: string; name: string }; hotel: { name: string; city: string };
@@ -484,17 +484,13 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
               <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
                 <dt className="text-gray-500">NGO Discovery</dt>
                 <dd className="font-bold text-[#0C2741]">
-                  {ov.automation.ngoDiscovery.googleConfigured
-                    ? (ov.automation.ngoDiscovery.lastSearchAt ? `✓ Operational (last search ${fmtTime(ov.automation.ngoDiscovery.lastSearchAt)})` : '✓ Ready — no search run yet')
-                    : '✕ Not configured'}
+                  {ov.automation.ngoDiscovery.lastSearchAt ? `✓ Operational (last search ${fmtTime(ov.automation.ngoDiscovery.lastSearchAt)})` : '✓ Ready — no search run yet'}
                 </dd>
               </div>
               <div className="rounded-xl bg-[#F9FCFA] border border-[#E3ECE6] p-3">
-                <dt className="text-gray-500">Google Places</dt>
+                <dt className="text-gray-500">Map Data</dt>
                 <dd className="font-bold text-[#0C2741]">
-                  {ov.automation.ngoDiscovery.googleConfigured
-                    ? `✓ Connected · ${ov.automation.ngoDiscovery.discoveredCount} organizations on file`
-                    : '✕ Error — API key missing'}
+                  {`✓ Connected (OpenStreetMap, no key) · ${ov.automation.ngoDiscovery.discoveredCount} organizations on file`}
                 </dd>
               </div>
             </dl>
@@ -548,8 +544,8 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
               )}
             </div>
             <p className="mt-0.5 text-xs sm:text-sm text-gray-500">
-              Real organizations discovered around {ov.hotel.city || 'your area'} via Google Places. A Google listing
-              alone is not verification — check each badge. Distances are measured from your kitchen&apos;s location.
+              Real organizations discovered around {ov.hotel.city || 'your area'} via OpenStreetMap (no API key needed).
+              A map listing alone is not verification — check each badge. Distances are measured from your kitchen&apos;s location.
             </p>
             {discStage && <p className="mt-2 text-xs sm:text-sm font-semibold text-[#006B48]" role="status"><span className="animate-spin inline-block">⏳</span> {discStage}</p>}
             {discMsg && <p className="mt-2 rounded-xl bg-emerald-50 p-2.5 text-xs font-semibold text-emerald-900 border border-emerald-200" role="status">{discMsg}</p>}
@@ -599,9 +595,9 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
                       <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-bold text-blue-900">
                         {VERIFICATION_LABELS[n.verificationStatus] ?? n.verificationStatus}
                       </span>{' '}
-                      <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[11px] text-stone-600">
-                        Source: {n.source === 'google_places' ? 'Google Places' : n.source === 'admin' ? 'Admin Entry' : n.source}
-                      </span>
+                  <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[11px] text-stone-600">
+                    Source: {n.source === 'openstreetmap' ? 'OpenStreetMap' : n.source === 'admin' ? 'Admin Entry' : n.source}
+                  </span>
                     </p>
                     <p className="mt-1.5 font-semibold text-[#0C2741]">
                       {n.distanceKm !== null ? `${n.distanceKm.toFixed(1)} km away` : 'Distance unavailable'}
@@ -620,14 +616,14 @@ function InstitutionView({ canManage }: { canManage: boolean }) {
                       Email: {n.contactEmail ? <>{n.contactEmail}{n.emailVerified ? ' (verified)' : ' (unverified — no mail sent)'}</> : 'Unavailable'}
                     </p>
                     <p className="text-gray-500">
-                      Operating status: {n.googleBusinessStatus ?? (n.isActive ? 'Active' : 'Inactive')}
+                      Operating status: {n.operationalStatus ?? (n.isActive ? 'Active' : 'Inactive')}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#E3ECE6] pt-2">
                       <span className="text-gray-500">Today&apos;s Email: {emailChip(n.emailStatus)}</span>
                       <span className="text-[11px] text-gray-400">Last checked: {fmtTime(n.lastCheckedAt)}</span>
                     </div>
                     <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">
-                      {n.googleMapsUri && <a href={n.googleMapsUri} target="_blank" rel="noreferrer" className="text-[#006B48] font-semibold underline">View on Google Maps</a>}
+                      {n.mapsUri && <a href={n.mapsUri} target="_blank" rel="noreferrer" className="text-[#006B48] font-semibold underline">View on map</a>}
                       {n.lastContact && <span className="text-gray-400">Last contact: {fmtTime(n.lastContact)}</span>}
                     </div>
                   </li>

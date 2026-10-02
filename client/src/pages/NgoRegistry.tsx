@@ -7,7 +7,7 @@ interface Ngo {
   website: string | null;
   acceptedCategories: string[]; pickupCapable: boolean; operatingHours: string | null;
   capacityKg: number | null; isActive: boolean;
-  googlePlaceId: string | null; googleMapsUri: string | null; googleBusinessStatus: string | null;
+  mapsUri: string | null; operationalStatus: string | null;
   source: string; lastCheckedAt: string | null;
   verificationStatus: string; verificationSource: string | null; ngoDarpanId: string | null;
   emailSource: string | null; emailVerified: boolean;
@@ -222,14 +222,14 @@ export function NgoRegistry() {
                     Food: {ACCEPTANCE_LABELS[n.foodAcceptanceStatus] ?? n.foodAcceptanceStatus}
                   </span>
                   <span className="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-600" title="Discovery source">
-                    {n.source === 'google_places' ? 'Google Places' : n.source}
+                    Source: {n.source === 'openstreetmap' ? 'OpenStreetMap' : n.source === 'admin' ? 'Admin Entry' : n.source}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-stone-600">
                   {[n.contactName, n.contactEmail ? `${n.contactEmail}${n.emailVerified ? ' (verified)' : ' (unverified — no mail sent)'}` : 'Email unavailable', n.contactPhone ?? 'Phone unavailable'].filter(Boolean).join(' · ')}
                 </p>
                 {n.website && <p className="text-sm"><a href={n.website} target="_blank" rel="noreferrer" className="text-leaf-800 underline">Official website</a></p>}
-                {n.googleMapsUri && <p className="text-sm"><a href={n.googleMapsUri} target="_blank" rel="noreferrer" className="text-leaf-800 underline">View on Google Maps</a></p>}
+                {n.mapsUri && <p className="text-sm"><a href={n.mapsUri} target="_blank" rel="noreferrer" className="text-leaf-800 underline">View on map</a></p>}
                 <p className="text-sm text-stone-600">
                   {[n.city, n.address].filter(Boolean).join(', ') || 'No service area recorded'} ·
                   accepts {n.acceptedCategories.join(', ') || 'nothing listed'} ·

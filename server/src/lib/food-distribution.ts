@@ -200,14 +200,14 @@ export async function triggerAutoDistribution(args: {
   });
   const ranked = ngos.map((n) => {
     if (orgHasCoords && typeof n.latitude === 'number' && typeof n.longitude === 'number') {
-      const relevance = (n.relevance === 'high' || n.relevance === 'likely' ? n.relevance : keywordRelevance(n.name, parseTypes(n.googleTypes)).level) as 'high' | 'likely' | 'unknown';
+      const relevance = (n.relevance === 'high' || n.relevance === 'likely' ? n.relevance : keywordRelevance(n.name, parseTypes(n.placeTypes)).level) as 'high' | 'likely' | 'unknown';
       const rank = rankScore({
         distanceKm: haversineKm(org.latitude as number, org.longitude as number, n.latitude as number, n.longitude as number),
         maxRadiusKm: 50,
         relevance,
         verificationStatus: n.verificationStatus,
         acceptance: (['confirmed', 'likely', 'unknown', 'does_not_accept'].includes(n.foodAcceptanceStatus) ? n.foodAcceptanceStatus : 'unknown') as 'confirmed' | 'likely' | 'unknown' | 'does_not_accept',
-        businessStatus: n.googleBusinessStatus,
+        businessStatus: n.operationalStatus,
       });
       const reasons = [
         { criterion: 'distance', points: rank.parts.distance, detail: `Real distance ${haversineKm(org.latitude as number, org.longitude as number, n.latitude as number, n.longitude as number)} km (40 max).` },
@@ -256,7 +256,7 @@ export async function triggerAutoDistribution(args: {
       results.push({ ngoId: c.ngo.id, ngoName: c.ngo.name, email, status: 'skipped-unverified' });
       continue;
     }
-    if (c.ngo.foodAcceptanceStatus === 'does_not_accept' || c.ngo.googleBusinessStatus === 'CLOSED_PERMANENTLY') {
+    if (c.ngo.foodAcceptanceStatus === 'does_not_accept' || c.ngo.operationalStatus === 'CLOSED_PERMANENTLY') {
       const why = c.ngo.foodAcceptanceStatus === 'does_not_accept' ? 'Organization does not accept surplus food.' : 'Organization is permanently closed.';
       await deliveryUpsert(c.ngo.id, email, { status: 'not_eligible', failureReason: why });
       results.push({ ngoId: c.ngo.id, ngoName: c.ngo.name, email, status: 'not-eligible' });

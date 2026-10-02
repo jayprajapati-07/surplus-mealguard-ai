@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 import { createApp } from './app';
 import { startEodScheduler } from './lib/eod-scheduler';
-import { googleConfigured } from './lib/google-places';
 import { resendConfigured, smtpConfigured } from './lib/mailer';
 import { geminiConfigured } from './lib/gemini';
 
@@ -18,7 +17,7 @@ app.listen(port, host, () => {
   // visible in the boot log instead of surfacing later as a vague UI error.
   // eslint-disable-next-line no-console
   console.log(
-    `[integrations] google_places=${googleConfigured() ? 'on' : 'OFF'} ` +
+    `[integrations] ngo_discovery=openstreetmap(keyless) ` +
     `email=${resendConfigured() ? 'resend' : smtpConfigured() ? 'smtp' : 'simulated'} ` +
     `gemini=${geminiConfigured() ? 'on' : 'OFF'} scheduler_tz=${process.env.EOD_TIMEZONE ?? 'server-local'}`
   );
