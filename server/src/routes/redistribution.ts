@@ -4,6 +4,7 @@ import { prisma } from '../prisma';
 import { requireAuth, requireRole, audit, type AuthenticatedRequest } from '../auth';
 import { scoreNgoMatch } from '../lib/matching';
 import { sendMail } from '../lib/mailer';
+import { buildSurplusEmail } from '../lib/food-distribution';
 
 const router = Router();
 router.use(requireAuth);
@@ -276,8 +277,77 @@ router.post('/notify/:matchId/retry', requireRole(...MANAGE_ROLES), async (req: 
   return res.json({ message: 'Delivery retried; attempt recorded truthfully.', attempt });
 });
 
-function shapeRecord(r: {
-  id: string; organizationId: string; kitchenUnitId: string | null; ngoId: string | null;
+// POST /api/redistribution/auto-retry — retry ONLY failed auto-distribution emails.
+// Matches with a prior successful send are never resent (duplicate protection).
+router.post('/auto-retry', requireRole(...MANAGE_ROLES), async (req: AuthenticatedRequest, res) => {
+  const parsed = z.object({ assessmentId: z.string().min(1) }).safeParse(req.body ?? {});
+  if (!parsed.success) return zodError(res, parsed.error);
+  const orgId = await orgIdFor(req, res);
+  if (!orgId) return;
+  const assessment = await prisma.surplusEligibilityAssessment.findFirst({
+    where: { id: parsed.data.assessmentId, organizationId: orgId },
+  });
+  if (!assessment) return res.status(404).json({ error: 'Assessment not found in your organization.' });
+  const org = await prisma.organization.findUnique({ where: { id: orgId } });
+  if (!org) return res.status(500).json({ error: 'Organization not found.' });
+  let recorded: { eodReportId?: string } = {};
+  try {
+    recorded = JSON.parse(assessment.recordedInfoJson ?? '{}') as typeof recorded;
+  } catch { /* keep defaults */ }
+  let dateLabel = assessment.foodDescription.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? new Date().toISOString().slice(0, 10);
+  if (recorded.eodReportId) {
+    const rep = await prisma.endOfDayReport.findUnique({ where: { id: recorded.eodReportId } });
+    if (rep) dateLabel = rep.date.toISOString().slice(0, 10);
+  }
+  const location = [org.address, org.city].filter(Boolean).join(', ');
+  const matches = await prisma.ngoMatch.findMany({
+    where: { assessmentId: assessment.id },
+    include: { ngo: true },
+  });
+  const results: { ngoId: string; ngoName: string; status: string; error?: string }[] = [];
+  for (const m of matches) {
+    const attempts = readAttempts(m);
+    if (attempts.some((a) => a.ok)) {
+      results.push({ ngoId: m.ngoId, ngoName: m.ngo.name, status: 'skipped-duplicate' });
+      continue;
+    }
+    if (!m.ngo.contactEmail || !/^\S+@\S+\.\S+$/.test(m.ngo.contactEmail.trim())) {
+      results.push({ ngoId: m.ngoId, ngoName: m.ngo.name, status: 'skipped-no-email' });
+      continue;
+    }
+    const { subject, text } = buildSurplusEmail({
+      hotelName: org.name, location, contactPhone: org.contactPhone,
+      ngoName: m.ngo.name, surplusKg: assessment.quantityKg, dateLabel,
+    });
+    const attempt = await sendMail({ to: m.ngo.contactEmail.trim(), subject, text });
+    await prisma.ngoMatch.update({
+      where: { id: m.id },
+      data: { deliveryJson: JSON.stringify({ attempts: [...attempts, attempt] }) },
+    });
+    await prisma.notification.create({
+      data: {
+        organizationId: orgId,
+        type: attempt.channel === 'simulated' ? 'NGO_NOTIFY_SIMULATED' : attempt.ok ? 'NGO_NOTIFY_SENT' : 'NGO_NOTIFY_FAILED',
+        title: `To ${m.ngo.name}: ${subject}`,
+        body: attempt.ok ? `Retried via ${attempt.channel} at ${attempt.at}.` : `Retry failed at ${attempt.at}: ${attempt.error ?? 'unknown error'}.`,
+        linkPath: '/food-distribution',
+      },
+    });
+    await audit('distribution.auto-retry', {
+      userId: req.userId, organizationId: orgId, entityType: 'NgoMatch', entityId: m.id,
+      metadata: { channel: attempt.channel, ok: attempt.ok },
+    });
+    results.push({
+      ngoId: m.ngoId, ngoName: m.ngo.name, status: attempt.ok ? 'sent' : 'failed',
+      ...(attempt.error ? { error: attempt.error } : {}),
+    });
+  }
+  const sent = results.filter((r) => r.status === 'sent').length;
+  const failed = results.filter((r) => r.status === 'failed').length;
+  return res.json({ message: `Retry finished: ${sent} sent, ${failed} failed, ${results.length - sent - failed} skipped.`, results });
+});
+
+function shapeRecord(r: {  id: string; organizationId: string; kitchenUnitId: string | null; ngoId: string | null;
   assessmentId: string | null; quantityKg: number; status: string; pickupAt: Date | null;
   deliveredAt: Date | null; notes: string | null; createdAt: Date;
   ngo?: { id: string; name: string; city: string | null } | null;

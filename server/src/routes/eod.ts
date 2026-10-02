@@ -6,6 +6,7 @@ import { coherenceError } from '../lib/flow';
 import { dedupeToLatest } from '../lib/kitchen-memory';
 import { computeSurplus, predictionError } from '../lib/eod-report';
 import { summarizeDayReport } from '../lib/gemini-explain';
+import { triggerAutoDistribution, type AutoDistributionResult } from '../lib/food-distribution';
 
 const router = Router();
 router.use(requireAuth);
@@ -242,6 +243,7 @@ export interface AutoEodResult {
   reportId?: string;
   surplusKg?: number;
   inconsistency?: boolean;
+  distribution?: AutoDistributionResult;
   error?: string;
 }
 
@@ -318,6 +320,7 @@ export async function buildAutoReport(
     mlValidation: mlFoods > 0 ? { foods: mlFoods, avgRmse: r3(rmses.reduce((x, y) => x + y, 0) / rmses.length) } : null,
     perFood: perFood.slice(0, 100),
     summary,
+    distribution: null as AutoDistributionResult | null,
   };
   const report = await prisma.endOfDayReport.create({
     data: {
@@ -332,11 +335,35 @@ export async function buildAutoReport(
         (s.inconsistency ? ' — DATA INCONSISTENCY FLAGGED, held for review.' : '.'),
     },
   });
+  // Phase 4: surplus > 0 with consistent data starts NGO distribution.
+  // Distribution failure never fails the report itself. The real report id
+  // anchors idempotency (one assessment per report, one send per NGO).
+  let distribution: AutoDistributionResult = { started: false, reason: 'No surplus to distribute.' };
+  if (s.surplusKg > 0 && !s.inconsistency) {
+    try {
+      distribution = await triggerAutoDistribution({
+        organizationId: orgId, kitchenUnitId: kitchen.id, kitchenName: kitchen.name,
+        eodReportId: report.id, dateLabel: key, surplusKg: s.surplusKg, inconsistency: s.inconsistency,
+      });
+    } catch (e) {
+      distribution = { started: false, reason: e instanceof Error ? e.message : 'Distribution trigger failed.' };
+    }
+  } else if (s.inconsistency) {
+    distribution = { started: false, reason: 'Data inconsistency flagged — no NGO emails sent.' };
+  }
+  accuracyPayload.distribution = distribution;
+  await prisma.endOfDayReport.update({
+    where: { id: report.id },
+    data: { accuracyJson: JSON.stringify(accuracyPayload) },
+  });
   await audit('eod.auto-close', {
     organizationId: orgId, entityType: 'EndOfDayReport', entityId: report.id,
-    metadata: { kitchenUnitId: kitchen.id, date: key, predictedKg: predicted, produced, sold, surplusKg: s.surplusKg, inconsistency: s.inconsistency },
+    metadata: {
+      kitchenUnitId: kitchen.id, date: key, predictedKg: predicted, produced, sold,
+      surplusKg: s.surplusKg, inconsistency: s.inconsistency, distributionStarted: distribution.started,
+    },
   });
-  return { ...base, ...names, status: 'created', reportId: report.id, surplusKg: s.surplusKg, inconsistency: s.inconsistency };
+  return { ...base, ...names, status: 'created', reportId: report.id, surplusKg: s.surplusKg, inconsistency: s.inconsistency, distribution };
 }
 
 /** Run the after-10PM sweep for every kitchen with records that day. One bad kitchen never blocks the rest. */
